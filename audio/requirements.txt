@@ -1,0 +1,17 @@
+# ASR pipeline notebook — Python 3.13 environment
+# DSP + plots + audio I/O
+numpy
+scipy
+matplotlib
+librosa
+soundfile
+# word error rate (substitutions / insertions / deletions)
+jiwer
+pandas
+# local HuggingFace Whisper inference (no API call)
+torch
+transformers
+huggingface_hub
+# run the notebook
+jupyterlab
+ipykernel

@@ -1,0 +1,9 @@
+# Python virtual environments (do NOT commit — recreate from requirements.txt)
+.venv/
+asr/
+# caches / build artifacts
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+# NOTE: models/ is intentionally NOT ignored — it holds the bundled weights (via Git LFS).

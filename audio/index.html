@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ASR Pipeline Visualizer + Model Comparison</title>
+<style>
+  :root {
+    --bg:#f3f4f9; --panel:#ffffff; --panel2:#f6f7fb; --panel3:#f4f5fb; --border:#e7e9f2;
+    --text:#2a2f3c; --muted:#8b93a6; --accent:#4f6ef2; --amber:#c0820f; --cyan:#0a9a8d;
+    --pink:#db3f86; --green:#15a34a; --red:#e0484d; --purple:#8b5cf6;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(30,40,80,.04),0 6px 22px rgba(30,40,80,.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:13px; line-height:1.5; }
+  header { padding:22px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,#ffffff,#f3f4f9); }
+  header h1 { margin:0; font-size:19px; font-weight:700; letter-spacing:-.2px; }
+  header p { margin:5px 0 0; color:var(--muted); font-size:12.5px; max-width:980px; }
+  .wrap { max-width:1280px; margin:0 auto; padding:18px 22px 90px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:16px; box-shadow:var(--shadow); }
+  .panel h2 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:1.1px; color:var(--muted); font-weight:700; }
+  .controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; align-items:end; }
+  .ctrl label { display:block; color:var(--muted); margin-bottom:5px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; font-weight:600; }
+  .ctrl input[type=text],.ctrl input[type=password],.ctrl select,textarea {
+    width:100%; background:#fff; border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-family:inherit; font-size:12px; }
+  textarea { resize:vertical; min-height:58px; }
+  .ctrl input[type=range],.zoomrow input[type=range] { width:100%; accent-color:var(--accent); }
+  .ctrl .val,.zoomrow .val { color:var(--purple); float:right; font-family:var(--mono); font-weight:700; }
+  .zoomrow .val { float:none; }
+  button { font-family:inherit; cursor:pointer; }
+  button.rec { background:linear-gradient(135deg,#8b5cf6,#4f6ef2); color:#fff; border:none; padding:12px 20px; border-radius:12px; font-weight:700; font-size:13px; width:100%; box-shadow:0 6px 18px rgba(79,110,242,.30); transition:filter .15s; }
+  button.rec:hover { filter:brightness(1.05); }
+  button.rec.recording { background:linear-gradient(135deg,#ff8080,#e0484d); box-shadow:0 6px 18px rgba(224,72,77,.32); animation:pulse 1.2s infinite; }
+  button.primary { background:var(--accent); color:#fff; border:none; padding:12px 20px; border-radius:12px; font-weight:700; font-size:13px; width:100%; box-shadow:0 4px 14px rgba(79,110,242,.26); transition:filter .15s; }
+  button.primary:hover { filter:brightness(1.05); }
+  button.primary:disabled { background:#c7cde0; color:#fff; box-shadow:none; cursor:not-allowed; }
+  button.mini { background:#fff; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:5px 10px; font-size:11px; }
+  button.mini:hover { border-color:var(--accent); color:var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.72} }
+  .status { color:var(--muted); font-size:12px; margin-top:10px; min-height:18px; }
+  canvas { display:block; background:#fbfcff; border-radius:8px; }
+  .scroll { overflow-x:auto; border:1px solid var(--border); border-radius:8px; background:#fbfcff; }
+  .scroll::-webkit-scrollbar { height:13px; }
+  .scroll::-webkit-scrollbar-thumb { background:#cfd5e6; border-radius:7px; border:3px solid #fbfcff; }
+  .scroll::-webkit-scrollbar-track { background:#eef0f7; }
+  .zoomrow { display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap; }
+  .zoomrow input[type=range] { flex:1; min-width:160px; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:10px; }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+  .legend i.brd { background:transparent; border:2px solid var(--red); }
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:14px; }
+  .stat { background:#fff; border:1px solid var(--border); border-radius:12px; padding:14px; text-align:center; box-shadow:var(--shadow); }
+  .stat b { display:block; font-size:22px; font-weight:700; color:var(--text); font-family:var(--mono); }
+  .stat span { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.6px; font-weight:600; }
+  pre.shapes { background:var(--panel3); border:1px solid var(--border); border-radius:10px; padding:14px; overflow-x:auto; font-size:12px; line-height:1.85; color:var(--text); font-family:var(--mono); }
+  pre.shapes .c { color:var(--muted); } pre.shapes .h { color:var(--amber); } pre.shapes .v { color:var(--cyan); }
+  .ddgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+  @media(max-width:900px){ .ddgrid{grid-template-columns:1fr} .stats{grid-template-columns:repeat(2,1fr)} }
+  .card { background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:12px; }
+  .card h3 { margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700; }
+  .card h3 b { color:var(--accent); }
+  .vecbox { display:none; margin-top:8px; background:#0f1626; border:1px solid #222c40; border-radius:8px; padding:8px; max-height:260px; overflow:auto; font-family:var(--mono); }
+  .vecbox.show { display:block; }
+  .vecnote { color:#ffcf8a; font-size:11px; margin-bottom:6px; }
+  .vecrow { display:flex; gap:0; white-space:nowrap; font-size:11px; }
+  .vidx { color:#7c8aa0; width:42px; flex:0 0 42px; text-align:right; padding-right:8px; }
+  .vval { width:64px; flex:0 0 64px; text-align:right; color:#b6c0d2; }
+  .vval.hot { color:#43e0d0; }
+  .chain { color:var(--muted); font-size:11.5px; margin-top:10px; word-break:break-word; }
+  .chain code,code { color:var(--amber); font-family:var(--mono); }
+  .anat { display:grid; grid-template-columns:1.6fr 1fr 1fr; gap:14px; }
+  @media(max-width:900px){ .anat{grid-template-columns:1fr} }
+  .tokwrap { display:flex; flex-wrap:wrap; gap:6px; }
+  .tok { border:1px solid var(--border); border-radius:7px; padding:4px 8px; font-size:12px; background:#fff; font-family:var(--mono); }
+  .tok small { color:var(--muted); font-size:10px; margin-left:4px; }
+  .tok.special { border-color:var(--amber); color:var(--amber); background:#fdf6e9; }
+  .tok.text { border-color:#bfe6e1; color:var(--cyan); }
+  .tok.punct { border-color:#f3c2d8; color:var(--pink); }
+  .tok.num { border-color:var(--amber); color:var(--amber); background:#fdf6e9; }
+  .twocol { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:820px){ .twocol{grid-template-columns:1fr} }
+  .keys { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:20px; background:var(--panel2); border:1px solid var(--border); font-size:11px; color:var(--muted); font-family:var(--mono); }
+  .hint { color:var(--muted); font-size:11.5px; margin-top:6px; }
+  a { color:var(--accent); }
+  .modelgroup .gh { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 4px; font-weight:600; }
+  .mchk { display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--border); border-radius:8px; padding:6px 10px; margin:0 8px 8px 0; font-size:12px; }
+  .mchk small { color:var(--muted); } .mchk.disabled { opacity:.55; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th,td { text-align:left; padding:8px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th { color:var(--muted); font-weight:700; text-transform:uppercase; font-size:10.5px; letter-spacing:.4px; cursor:pointer; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; font-family:var(--mono); }
+  tr.resrow { cursor:pointer; } tr.resrow:hover { background:#f2f4fc; } tr.resrow.sel { background:#eaeefc; }
+  .wbad{color:var(--red)} .wmid{color:var(--amber)} .wgood{color:var(--green)} .err{color:var(--red)} .spin{color:var(--accent)}
+  .detail { margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--panel2); display:none; }
+  .detail.show { display:block; }
+  .align { line-height:2.0; font-size:13px; word-break:break-word; }
+  .al-h{color:var(--text)} .al-s{color:#fff;background:var(--pink);border-radius:3px;padding:0 3px} .al-i{color:var(--amber);border-bottom:2px solid var(--amber)} .al-d{color:var(--red);text-decoration:line-through;opacity:.85}
+  .kv { color:var(--muted); font-size:12px; margin:4px 0; } .kv b { color:var(--text); }
+  .chunk { border-left:3px solid var(--accent); padding:6px 0 6px 12px; margin:6px 0; cursor:pointer; border-radius:0 6px 6px 0; }
+  .chunk:hover { background:#f2f4fc; } .chunk.sel { background:#eaeefc; }
+  .chunk .meta { color:var(--muted); font-size:11px; font-family:var(--mono); }
+  .deepnote { color:var(--muted); font-size:12px; float:right; font-weight:500; text-transform:none; letter-spacing:0; font-family:var(--mono); }
+  .vadcards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  @media(max-width:820px){ .vadcards{grid-template-columns:1fr} }
+  .vadcard { background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px; cursor:pointer; transition:border-color .15s, box-shadow .15s, background .15s; }
+  .vadcard:hover { border-color:#c7cde0; }
+  .vadcard.active { border-color:var(--accent); background:#f3f5ff; box-shadow:0 0 0 1px var(--accent) inset, 0 6px 18px rgba(79,110,242,.12); }
+  .vadcard h4 { margin:0 0 6px; font-size:15px; font-weight:700; color:var(--text); }
+  .vadcard p { margin:0 0 12px; color:var(--muted); font-size:12px; line-height:1.5; min-height:48px; }
+  .vadcard .badge { display:inline-block; font-size:10px; letter-spacing:.5px; text-transform:uppercase; color:var(--green); background:rgba(21,163,74,.10); border:1px solid rgba(21,163,74,.28); border-radius:6px; padding:2px 8px; font-family:var(--mono); }
+  .cinsp { display:grid; grid-template-columns:46px 200px 1fr; gap:12px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:12px; background:var(--panel2); margin-bottom:10px; }
+  @media(max-width:760px){ .cinsp{grid-template-columns:46px 1fr; } .cinsp .cwave{grid-column:2;} .cinsp .cbody{grid-column:1 / -1;} }
+  .cinsp .cplay { width:38px; height:38px; border-radius:50%; border:1px solid var(--accent); background:#eef1fe; color:var(--accent); font-size:14px; cursor:pointer; }
+  .cinsp .cplay:hover,.cinsp .cplay.playing { background:var(--accent); color:#fff; }
+  .cinsp canvas.cwave { width:200px; height:54px; background:#fbfcff; border:1px solid var(--border); border-radius:8px; }
+  .cinsp .cmeta { color:var(--muted); font-size:11px; margin-bottom:4px; font-family:var(--mono); }
+  .cinsp .ctext { font-size:13px; color:var(--text); word-break:break-word; }
+  .cinsp .ctext.empty { color:var(--muted); font-style:italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ASR Pipeline Visualizer + Model Comparison</h1>
+  <p>Record or upload speech → watch it become a waveform → frames → windows → FFT → mel-spectrogram → tokens, then transcribe with multiple ASR models and compare latency, estimated cost, and WER (substitution / insertion / deletion) against a ground-truth reference. All DSP runs client-side.</p>
+</header>
+
+<div class="wrap">
+
+  <!-- 0 · INPUT -->
+  <div class="panel">
+    <h2>Audio input</h2>
+    <div class="controls">
+      <div class="ctrl"><label>Microphone</label><button id="recBtn" class="rec">● Start recording</button></div>
+      <div class="ctrl"><label>…or upload a file</label><input id="fileInput" type="file" accept="audio/*" />
+        <div class="hint">wav / mp3 / m4a / ogg / webm → decoded &amp; resampled to 16 kHz mono</div></div>
+    </div>
+    <div class="status" id="status">Idle. Record or upload audio. (Serve on http://localhost — mic needs a secure context.)</div>
+  </div>
+
+  <!-- 1a · VAD METHOD -->
+  <div class="panel">
+    <h2>VAD method <span class="deepnote">switch to compare how each handles noise on the same recording</span></h2>
+    <div class="vadcards">
+      <div class="vadcard active" data-vad="energy">
+        <h4>Energy RMS</h4>
+        <p>Simple amplitude threshold over a noise floor. Fastest; can be fooled by sustained background noise.</p>
+        <span class="badge">built-in</span></div>
+      <div class="vadcard" data-vad="subband">
+        <h4>Sub-band energy</h4>
+        <p>Energy inside the 80 Hz–4 kHz speech band (FFT per frame). More robust to low-frequency rumble &amp; hum.</p>
+        <span class="badge">built-in</span></div>
+      <div class="vadcard" data-vad="zcr">
+        <h4>Energy + zero-crossing</h4>
+        <p>Gates the energy detector with a zero-crossing test to reject high-frequency clicks &amp; fricative-only noise.</p>
+        <span class="badge">built-in</span></div>
+    </div>
+    <div class="hint">Pick a method, then record. Switching after a recording re-runs the pipeline on the same audio so you can compare frame-by-frame.</div>
+  </div>
+
+  <!-- 1b · PIPELINE CONTROLS -->
+  <div class="panel">
+    <h2>Pipeline controls</h2>
+    <div class="controls">
+      <div class="ctrl"><label>Silence tail <span class="val" id="tailVal">600 ms</span> <small>(how much silence ends a chunk)</small></label>
+        <input id="tail" type="range" min="100" max="1500" step="50" value="600" /></div>
+      <div class="ctrl"><label>VAD threshold <span class="val" id="threshVal">×8 noise</span> <small>(speech energy floor)</small></label>
+        <input id="thresh" type="range" min="2" max="20" step="1" value="8" /></div>
+      <div class="ctrl"><label>Frame size <span class="val" id="frameVal">20 ms</span> <small>(VAD classifies one frame at a time)</small></label>
+        <input id="frame" type="range" min="10" max="40" step="5" value="20" /></div>
+    </div>
+    <div class="hint">Window = 25 ms wide with a 10 ms hop, used to compute one mel-spectrogram column. Chunk = a VAD-bounded speech segment. Re-runs the pipeline live when changed.</div>
+  </div>
+
+  <!-- 2 · WAVEFORM -->
+  <div class="panel">
+    <h2>Raw waveform <span class="pill">click to inspect a window</span></h2>
+    <div class="scroll" id="waveScroll"><canvas id="wave" height="190"></canvas></div>
+    <div class="zoomrow">
+      <span style="color:var(--muted)">Horizontal zoom</span>
+      <input id="zoom" type="range" min="20" max="800" step="10" value="150" />
+      <span class="val" id="zoomVal">150 px/s</span>
+      <button class="mini" id="fitBtn">Fit</button>
+      <button class="mini" id="oneSecBtn">1s</button>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--green)"></i> frame · VAD = speech</span>
+      <span><i style="background:var(--purple)"></i> window (25 ms, 10 ms hop)</span>
+      <span><i class="brd"></i> chunk (VAD-bounded, one ASR call)</span>
+      <span><i style="background:var(--amber)"></i> selected window</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="statSec">—</b><span>seconds</span></div>
+      <div class="stat"><b id="statFrames">—</b><span>frames</span></div>
+      <div class="stat"><b id="statWindows">—</b><span>windows</span></div>
+      <div class="stat"><b id="statChunks">—</b><span>chunks</span></div>
+    </div>
+  </div>
+
+  <!-- 3 · PIPELINE SHAPES -->
+  <div class="panel">
+    <h2>Pipeline shapes (what your audio became, step by step)</h2>
+    <pre class="shapes" id="pipeShapes">— record or upload audio —</pre>
+  </div>
+
+  <!-- 4 · FULL MEL SPECTROGRAM -->
+  <div class="panel">
+    <h2>Full mel spectrogram (axis-labelled) <span class="deepnote" id="melMeta"></span></h2>
+    <div style="display:flex; gap:0; align-items:stretch;">
+      <canvas id="melAxis" width="54" height="240" style="flex:0 0 54px; border:1px solid var(--border); border-right:none; border-radius:6px 0 0 6px;"></canvas>
+      <div class="scroll" id="melFullScroll" style="flex:1; border-radius:0 6px 6px 0;"><canvas id="melFull" height="240"></canvas></div>
+    </div>
+    <div class="zoomrow">
+      <span style="color:var(--muted)">Spectrogram zoom</span>
+      <input id="melZoom" type="range" min="1" max="30" step="1" value="3" />
+      <span class="val" id="melZoomVal">3 px/col</span>
+      <span style="color:var(--muted); font-size:11px;">x-axis: time (s) · y-axis: mel bin (low→high) · color: log energy</span>
+    </div>
+  </div>
+
+  <!-- 5 · SELECTED WINDOW DEEP DIVE -->
+  <div class="panel">
+    <h2>Selected window deep dive <span class="deepnote" id="ddMeta">click the waveform</span></h2>
+    <div class="ddgrid">
+      <div class="card"><h3>1 · Window slice <b>(400 samples)</b></h3>
+        <canvas id="dvSlice" height="120"></canvas>
+        <button class="mini rawtoggle" data-t="rawSlice">Show raw vector ▾</button>
+        <div class="vecbox" id="rawSlice"></div></div>
+      <div class="card"><h3>2 · FFT magnitude <b>(257 bins, 0–8 kHz)</b></h3>
+        <canvas id="dvFFT" height="120"></canvas>
+        <button class="mini rawtoggle" data-t="rawFFT">Show raw vector ▾</button>
+        <div class="vecbox" id="rawFFT"></div></div>
+      <div class="card"><h3>3 · Log-mel vector <b>(80 bins)</b></h3>
+        <canvas id="dvMel" height="120"></canvas>
+        <button class="mini rawtoggle" data-t="rawMel">Show raw vector ▾</button>
+        <div class="vecbox" id="rawMel"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px;"><h3>4 · Full log-mel spectrogram <b>(80 × N)</b> — selected column highlighted</h3>
+      <canvas id="dvFull" height="220"></canvas></div>
+  </div>
+
+  <!-- 6 · ANATOMY -->
+  <div class="panel">
+    <h2>Anatomy of one window: how the FFT &amp; log-mel vector are built</h2>
+    <div class="anat">
+      <div class="card"><h3>Step 1 · slice × Hann window</h3>
+        <canvas id="anStep1" height="150"></canvas>
+        <div class="hint">Multiply the 400-sample slice by a Hann window (tapers edges to zero so the FFT doesn't leak energy between bins).</div>
+        <button class="mini rawtoggle" data-t="rawWin">Show windowed vector ▾</button>
+        <div class="vecbox" id="rawWin"></div></div>
+      <div class="card"><h3>Step 2 · zero-pad to 512 &amp; FFT</h3>
+        <canvas id="anStep2" height="150"></canvas>
+        <div class="hint">Pad to 512 (power of 2) so the FFT is fast; keep magnitudes of the first 257 bins.</div>
+        <button class="mini rawtoggle" data-t="rawPad">Show padded 512-vector ▾</button>
+        <div class="vecbox" id="rawPad"></div></div>
+      <div class="card"><h3>Step 3 · mel filterbank × power</h3>
+        <canvas id="anStep3" height="150"></canvas>
+        <div class="hint">80 triangular filters span 0–8 kHz on a mel scale; each sums weighted FFT power, then log() compresses it.</div>
+        <button class="mini rawtoggle" data-t="rawFilt">Show highlighted filter weights ▾</button>
+        <div class="vecbox" id="rawFilt"></div></div>
+    </div>
+    <div class="chain">Chain for one window: <code>400 samples</code> → <code>512 padded</code> → <code>257 FFT magnitudes</code> → <code>257 FFT power</code> → <code>80 mel powers</code> → <code>80 log-mel values</code>. That 80-vector is one spectrogram column.</div>
+  </div>
+
+  <!-- 7 · GROUND TRUTH -->
+  <div class="panel"><h2>Ground truth (reference for WER)</h2>
+    <textarea id="groundTruth" placeholder="Type or paste exactly what was said. Leave blank to skip accuracy scoring."></textarea>
+    <div class="hint">WER = (Substitutions + Insertions + Deletions) / reference-word-count. Case-insensitive, punctuation ignored. Every model runs locally in your browser — no API keys.</div></div>
+
+  <!-- 8 · MODELS -->
+  <div class="panel"><h2>Models to compare</h2>
+    <div id="modelPicker"></div>
+    <button id="compareBtn" class="primary" style="max-width:340px;margin-top:8px;">▶ Transcribe &amp; compare selected models</button>
+    <div class="hint">All models run <b>fully in your browser</b> via transformers.js — no API key, no API call. Weights are <b>bundled in <code>web-models/</code></b> (q8-quantized ONNX) and loaded locally, so it works after cloning even where HuggingFace is blocked. The transformers.js runtime itself loads from a CDN on first use. The <b>first</b> run of each model warms up, then it's fast. Anthropic Claude is listed but can't transcribe audio.</div>
+  </div>
+
+  <!-- 9 · RESULTS -->
+  <div class="panel"><h2>Comparison results</h2>
+    <table id="resultsTable"><thead><tr>
+      <th data-sort="model">Model</th><th data-sort="latency" class="num">Latency</th><th data-sort="cost" class="num">Cost (est)</th>
+      <th data-sort="wer" class="num">WER</th><th class="num">Sub</th><th class="num">Ins</th><th class="num">Del</th><th>Status</th>
+    </tr></thead><tbody id="resultsBody"><tr><td colspan="8" style="color:var(--muted)">— run a comparison to populate —</td></tr></tbody></table>
+    <div class="legend">
+      <span><i style="background:var(--pink)"></i> substitution</span><span><i style="background:var(--amber)"></i> insertion</span>
+      <span><i style="background:var(--red)"></i> deletion</span><span><i style="background:var(--text)"></i> correct word</span></div>
+    <div class="detail" id="detail"></div>
+    <div class="hint" style="margin-top:10px;">Every model runs locally in-browser, so cost is <b>free</b>. Latency is wall-clock per request (the first run of each model includes one-time warm-up).</div>
+  </div>
+
+  <!-- 10 · DECODER TOKENS -->
+  <div class="panel"><h2>Decoder output tokens (Whisper BPE, approximate)
+    <span class="deepnote">from <select id="tokModel" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:2px 6px;font-family:inherit;font-size:11px;"></select></span></h2>
+    <div class="tokwrap" id="tokens"><span style="color:var(--muted)">— transcribe to populate —</span></div>
+    <div class="hint">IDs are illustrative. Whisper uses a learned BPE vocabulary of ~51,865 entries; words split into sub-word pieces (e.g. tran+scrib+ed). One token is emitted per autoregressive decoder step.</div>
+  </div>
+
+  <!-- 11 · TRANSCRIPT + CHUNKS -->
+  <div class="panel"><h2>Transcript &amp; chunks
+    <span class="deepnote">showing <select id="trModel" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:2px 6px;font-family:inherit;font-size:11px;"></select></span></h2>
+    <div class="align" id="transcript" style="line-height:1.7;"><span style="color:var(--muted)">— transcribe to populate —</span></div>
+    <div style="margin-top:12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Per-chunk breakdown (click to highlight on waveform)</div>
+    <div id="chunkList"></div>
+    <div class="stats" id="timingCards" style="margin-top:14px;">
+      <div class="stat"><b id="tCap">—</b><span>capture ms</span></div>
+      <div class="stat"><b id="tAna">—</b><span>analysis ms</span></div>
+      <div class="stat"><b id="tAsr">—</b><span>ASR ms</span></div>
+      <div class="stat"><b id="tTot">—</b><span>total ms</span></div>
+    </div>
+  </div>
+
+  <!-- 12 · LISTEN + PER-CHUNK INSPECTOR -->
+  <div class="panel"><h2>Listen &amp; inspect — per-chunk waveform + transcription</h2>
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+      <audio id="player" controls style="height:38px;"></audio>
+      <span style="color:var(--muted); font-size:12px;">whole clip</span>
+      <span style="flex:1"></span>
+      <label style="color:var(--muted); font-size:12px;">show transcription from
+        <select id="chunkModel" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-family:inherit;font-size:12px;"></select></label>
+    </div>
+    <div id="chunkInspector"><span style="color:var(--muted);font-size:12px;">— record or upload audio; each VAD chunk appears here with a play button —</span></div>
+    <div class="hint">Run “Transcribe &amp; compare selected models” first — each selected model transcribes every chunk and the results are <b>stored</b>. Then pick a model in this dropdown to see its per-chunk text <b>instantly</b> (no re-call). Each row also plays just that chunk — handy for spotting where a model drops or mangles a phrase.</div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   16 kHz: frame = slider ms (non-overlapping, VAD unit);
+   window = 25 ms / 10 ms hop (FFT 512, 257 bins); mels = 80.
+   ============================================================ */
+const SR=16000, FFT_N=512, BINS=FFT_N/2+1, N_MELS=80, WIN=400, HOP=160, FMIN=0, FMAX=8000;
+const $ = id => document.getElementById(id);
+const statusEl=$('status'), recBtn=$('recBtn');
+const status = m => { statusEl.textContent = m; statusEl.style.color = /^(Ready|Done|Comparison complete|Per-chunk)/.test(m) ? 'var(--green)' : ''; };
+const escapeHtml = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function fmtNum(v){ if(v===0)return '0.0000'; const a=Math.abs(v); if(a<1e-3)return v.toExponential(2); return v.toFixed(4); }
+
+// ---------- providers / models / rates ----------
+const RATES = {};   // every model runs locally in-browser — no API cost
+const PROVIDERS = {
+  local:{label:'Local — in-browser (transformers.js · bundled weights · no API, no download)',local:true,models:[
+    {id:'onnx-community/moonshine-tiny-ONNX',size:'XS · Moonshine (Useful Sensors)'},
+    {id:'onnx-community/moonshine-base-ONNX',size:'S · Moonshine (Useful Sensors)'},
+    {id:'Xenova/whisper-tiny.en',size:'S · Whisper (OpenAI) · English'},
+    {id:'Xenova/whisper-base.en',size:'S · Whisper (OpenAI) · English'},
+    {id:'onnx-community/distil-small.en',size:'M · distil-Whisper (HuggingFace)'},
+    {id:'Xenova/wav2vec2-base-960h',size:'S · wav2vec2 (Meta) · CTC'}]},
+  anthropic:{label:'Anthropic Claude',unsupported:true,models:[{id:'claude-opus-4-8',size:'no audio support'}]},
+};
+const DEFAULT_CHECKED = new Set(['Xenova/whisper-tiny.en','onnx-community/moonshine-tiny-ONNX']);
+const MODEL_PROVIDER = {}; for(const [pk,p] of Object.entries(PROVIDERS)) for(const m of p.models) MODEL_PROVIDER[m.id]=pk;
+const providerOf = id => MODEL_PROVIDER[id] || 'local';
+const sizeOf = id => { for(const p of Object.values(PROVIDERS)){const m=p.models.find(x=>x.id===id); if(m)return m.size;} return ''; };
+function waitFor(cond,ms){ return new Promise(res=>{ const t0=performance.now(); const iv=setInterval(()=>{ if(cond()||performance.now()-t0>ms){clearInterval(iv);res();} },100); }); }
+
+// keys
+$('groundTruth').value=localStorage.getItem('asr_gt')||'';
+$('groundTruth').addEventListener('input',()=>localStorage.setItem('asr_gt',$('groundTruth').value));
+
+// model picker
+(function(){ const host=$('modelPicker');
+  for(const [pk,p] of Object.entries(PROVIDERS)){
+    const g=document.createElement('div'); g.className='modelgroup';
+    const h=document.createElement('div'); h.className='gh'; h.textContent=p.label; g.appendChild(h);
+    for(const m of p.models){
+      const lab=document.createElement('label'); lab.className='mchk'+(p.unsupported?' disabled':'');
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.className='modelchk'; cb.value=m.id; cb.disabled=!!p.unsupported;
+      if(DEFAULT_CHECKED.has(m.id)) cb.checked=true;
+      lab.appendChild(cb); lab.insertAdjacentHTML('beforeend',' '+escapeHtml(m.id)+' <small>'+escapeHtml(m.size)+'</small>'); g.appendChild(lab);
+    } host.appendChild(g);
+  }
+})();
+
+// state (declared BEFORE the sliders so the sliders' init callbacks can touch it — TDZ otherwise)
+let audioCtx=null,mediaStream=null,processor=null,sourceNode=null,recording=false;
+let captureBuf=[],captureStart=0,captureMs=0,analysisMs=0;
+let rawSig=null, lastAudio=null, segments=[], frameInfo=null, melData=null;
+let selectedWindow=-1, selectedChunk=-1, wavePps=150, melPxCol=3;
+let resultsMap={}, selectedRow=null, sortKey='wer';
+let vadMethodVal='energy';
+let playerURL=null, playingBtn=null;
+
+// sliders
+const bind=(id,fmt,cb)=>{ const el=$(id),out=$(id+'Val'); const upd=()=>{out.textContent=fmt(el.value); if(cb)cb();}; el.addEventListener('input',upd); upd(); };
+bind('tail',v=>v+' ms',reprocess);
+bind('thresh',v=>'×'+v+' noise',reprocess);
+bind('frame',v=>v+' ms',reprocess);
+bind('zoom',v=>v+' px/s',()=>{ wavePps=parseInt($('zoom').value); renderWaveform(); });
+bind('melZoom',v=>v+' px/col',()=>{ melPxCol=parseInt($('melZoom').value); renderMelFull(); });
+function reprocess(){ if(rawSig) processLoadedAudio(rawSig); }
+// VAD method cards
+document.querySelectorAll('.vadcard').forEach(c=>c.addEventListener('click',()=>{
+  document.querySelectorAll('.vadcard').forEach(x=>x.classList.remove('active'));
+  c.classList.add('active'); vadMethodVal=c.dataset.vad; reprocess();
+}));
+
+// ============================================================ DSP
+function fft(re,im){ const n=re.length;
+  for(let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1)j^=bit; j^=bit; if(i<j){const t=re[i];re[i]=re[j];re[j]=t;const u=im[i];im[i]=im[j];im[j]=u;} }
+  for(let len=2;len<=n;len<<=1){ const ang=-2*Math.PI/len,wr=Math.cos(ang),wi=Math.sin(ang),half=len>>1;
+    for(let i=0;i<n;i+=len){ let cr=1,ci=0; for(let k=0;k<half;k++){ const ar=re[i+k],ai=im[i+k];
+      const br=re[i+k+half]*cr-im[i+k+half]*ci, bi=re[i+k+half]*ci+im[i+k+half]*cr;
+      re[i+k]=ar+br; im[i+k]=ai+bi; re[i+k+half]=ar-br; im[i+k+half]=ai-bi; const ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr; } } } }
+const hann=new Float32Array(WIN); for(let i=0;i<WIN;i++) hann[i]=0.5-0.5*Math.cos(2*Math.PI*i/(WIN-1));
+function windowedSlice(sig,off){ const out=new Float32Array(WIN); for(let i=0;i<WIN;i++) out[i]=(sig[off+i]||0)*hann[i]; return out; }
+function paddedFFTInput(sig,off){ const re=new Float32Array(FFT_N); const w=windowedSlice(sig,off); re.set(w,0); return re; }
+function frameMagnitudes(sig,off){ const re=paddedFFTInput(sig,off),im=new Float32Array(FFT_N); fft(re,im); const mag=new Float32Array(BINS); for(let i=0;i<BINS;i++)mag[i]=Math.hypot(re[i],im[i]); return mag; }
+const hzToMel=f=>2595*Math.log10(1+f/700), melToHz=m=>700*(Math.pow(10,m/2595)-1);
+const melFB=(()=>{ const m0=hzToMel(FMIN),m1=hzToMel(FMAX),pts=new Float32Array(N_MELS+2);
+  for(let i=0;i<pts.length;i++)pts[i]=melToHz(m0+(m1-m0)*i/(N_MELS+1)); const binHz=i=>i*SR/FFT_N,fb=[];
+  for(let m=1;m<=N_MELS;m++){ const lo=pts[m-1],ctr=pts[m],hi=pts[m+1],row=new Float32Array(BINS);
+    for(let k=0;k<BINS;k++){ const f=binHz(k); if(f>=lo&&f<=ctr)row[k]=(f-lo)/(ctr-lo||1); else if(f>ctr&&f<=hi)row[k]=(hi-f)/(hi-ctr||1); } fb.push(row); } return fb; })();
+function logMelFrame(mag){ const out=new Float32Array(N_MELS); for(let m=0;m<N_MELS;m++){ let s=0; const row=melFB[m]; for(let k=0;k<BINS;k++)s+=row[k]*(mag[k]*mag[k]); out[m]=Math.log(Math.max(s,1e-10)); } return out; }
+
+// ============================================================ VAD (frame-based)
+function bandEnergy(sig,base,len){ // RMS within the 80 Hz–4 kHz speech band
+  const re=new Float32Array(512),im=new Float32Array(512), N=Math.min(len,512);
+  for(let i=0;i<N;i++) re[i]=sig[base+i]||0; fft(re,im);
+  const lo=Math.max(1,Math.floor(80*512/SR)), hi=Math.min(256,Math.ceil(4000*512/SR));
+  let p=0; for(let k=lo;k<=hi;k++) p+=re[k]*re[k]+im[k]*im[k];
+  return Math.sqrt(p)/N;
+}
+function runVAD(sig){
+  const frameMs=parseFloat($('frame').value), frameLen=Math.round(frameMs/1000*SR);
+  const mult=parseFloat($('thresh').value), tailMs=parseFloat($('tail').value), method=vadMethodVal;
+  const nF=Math.floor(sig.length/frameLen), metric=new Float32Array(nF), zcrs=new Float32Array(nF);
+  for(let w=0;w<nF;w++){ const base=w*frameLen; let e=0,z=0;
+    for(let i=0;i<frameLen;i++){ const s=sig[base+i]; e+=s*s; if(i>0&&(s>=0)!==(sig[base+i-1]>=0))z++; }
+    zcrs[w]=z/frameLen; metric[w]= method==='subband' ? bandEnergy(sig,base,frameLen) : Math.sqrt(e/frameLen); }
+  const sorted=Array.from(metric).sort((a,b)=>a-b);
+  const noise=sorted[Math.floor(sorted.length*0.2)]||0, peak=sorted[sorted.length-1]||1e-6;
+  const thr=Math.max(noise*mult, peak*0.02);   // scales to whichever metric is in use
+  const speech=new Array(nF).fill(false);
+  for(let w=0;w<nF;w++){ let on=metric[w]>thr; if(method==='zcr'&&on)on=zcrs[w]<0.35; speech[w]=on; }
+  const tailF=Math.ceil((tailMs/1000)*SR/frameLen);
+  for(let w=0;w<nF;w++){ if(!speech[w]){ let gap=0,k=w; while(k<nF&&!speech[k]){gap++;k++;} if(gap<=tailF&&w>0&&k<nF)for(let j=w;j<k;j++)speech[j]=true; w=k-1; } }
+  const segs=[]; let s=-1;
+  for(let w=0;w<nF;w++){ if(speech[w]&&s<0)s=w; if((!speech[w]||w===nF-1)&&s>=0){ const e=speech[w]?w+1:w; segs.push({start:s*frameLen,end:e*frameLen}); s=-1; } }
+  return { segs, frames:{len:frameLen, n:nF, speech} };
+}
+
+// ============================================================ canvas helpers
+function fitCanvas(cv,cssW,cssH){ const dpr=window.devicePixelRatio||1; cssH=cssH||parseInt(cv.getAttribute('height'));
+  cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr); cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); return {ctx,W:cssW,H:cssH}; }
+function niceTimeStep(pps){ const target=70/pps; const steps=[0.05,0.1,0.25,0.5,1,2,5,10,30,60]; for(const s of steps) if(s>=target) return s; return 60; }
+
+// ============================================================ waveform
+function renderWaveform(){
+  if(!lastAudio) return;
+  const durSec=lastAudio.length/SR, AX=18;
+  const cssW=Math.max($('waveScroll').clientWidth-2, Math.ceil(durSec*wavePps));
+  const {ctx,W,H}=fitCanvas($('wave'),cssW); const wfH=H-AX;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#eef1f8'; ctx.fillRect(0,0,W,wfH);
+  const x=t=>t/durSec*W; // seconds → x
+  // chunks (red boxes)
+  for(let c=0;c<segments.length;c++){ const sg=segments[c]; const x0=x(sg.start/SR),x1=x(sg.end/SR);
+    ctx.fillStyle=c===selectedChunk?'rgba(255,92,108,0.22)':'rgba(255,92,108,0.10)'; ctx.fillRect(x0,0,x1-x0,wfH);
+    ctx.strokeStyle='rgba(255,92,108,0.8)'; ctx.lineWidth=1; ctx.strokeRect(x0+0.5,0.5,x1-x0-1,wfH-1); }
+  // window boundaries (purple) when zoomed enough
+  const winPx=(HOP/SR)*wavePps;
+  if(winPx>=6 && melData){ ctx.strokeStyle='rgba(181,140,255,0.35)'; ctx.lineWidth=1; ctx.beginPath();
+    for(let i=0;i<melData.frames;i++){ const xx=x((i*HOP)/SR); ctx.moveTo(xx+0.5,0); ctx.lineTo(xx+0.5,12); } ctx.stroke(); }
+  // selected window (yellow band)
+  if(selectedWindow>=0){ const x0=x((selectedWindow*HOP)/SR), x1=x((selectedWindow*HOP+WIN)/SR);
+    ctx.fillStyle='rgba(255,180,84,0.30)'; ctx.fillRect(x0,0,Math.max(x1-x0,2),wfH); }
+  // waveform
+  ctx.strokeStyle='#36406e'; ctx.lineWidth=1; ctx.beginPath(); const spp=lastAudio.length/W;
+  for(let px=0;px<W;px++){ let mn=1,mx=-1; const a=Math.floor(px*spp),b=Math.floor((px+1)*spp);
+    for(let i=a;i<b;i++){ const v=lastAudio[i]; if(v<mn)mn=v; if(v>mx)mx=v; }
+    ctx.moveTo(px+0.5,(1-(mx+1)/2)*wfH); ctx.lineTo(px+0.5,(1-(mn+1)/2)*wfH); } ctx.stroke();
+  // speech frames (green strip at bottom of waveform area)
+  if(frameInfo){ const fl=frameInfo.len; ctx.fillStyle='rgba(61,220,132,0.55)';
+    for(let f=0;f<frameInfo.n;f++){ if(!frameInfo.speech[f])continue; const x0=x((f*fl)/SR),x1=x(((f+1)*fl)/SR); ctx.fillRect(x0,wfH-7,Math.max(x1-x0-0.5,1),6); } }
+  ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.beginPath(); ctx.moveTo(0,wfH/2); ctx.lineTo(W,wfH/2); ctx.stroke();
+  // time axis
+  ctx.fillStyle='#eef1f7'; ctx.fillRect(0,wfH,W,AX);
+  ctx.fillStyle='#8b93a6'; ctx.font='10px monospace'; ctx.strokeStyle='rgba(0,0,0,0.12)';
+  const step=niceTimeStep(wavePps);
+  for(let t=0;t<=durSec+1e-9;t+=step){ const xx=x(t); ctx.beginPath(); ctx.moveTo(xx+0.5,wfH); ctx.lineTo(xx+0.5,wfH+4); ctx.stroke();
+    ctx.fillText(t.toFixed(step<1?2:(step<5?1:0))+'s', Math.min(xx+2,W-30), wfH+13); }
+}
+function setZoom(pps){ wavePps=Math.max(2,pps); const z=$('zoom'); z.value=Math.min(parseInt(z.max),Math.max(parseInt(z.min),Math.round(wavePps))); $('zoomVal').textContent=Math.round(wavePps)+' px/s'; renderWaveform(); }
+$('fitBtn').addEventListener('click',()=>{ if(lastAudio) setZoom(($('waveScroll').clientWidth-4)/(lastAudio.length/SR)); });
+$('oneSecBtn').addEventListener('click',()=>{ setZoom($('waveScroll').clientWidth-4); });
+
+// ============================================================ pipeline shapes
+function renderShapes(){
+  if(!lastAudio){ $('pipeShapes').textContent='— record or upload audio —'; return; }
+  const n=lastAudio.length, dur=(n/SR).toFixed(2), frameMs=$('frame').value, fr=frameInfo.n, win=melData.frames, ch=segments.length;
+  $('pipeShapes').innerHTML =
+    `audio: <span class="v">${n.toLocaleString()}</span> samples (Float32) <span class="c">// ${dur}s × 16,000 Hz</span>\n`+
+    `frames: <span class="v">${fr.toLocaleString()}</span> × <span class="h">${frameMs} ms</span> <span class="c">// VAD classifies each as speech / silence</span>\n`+
+    `windows: <span class="v">${win.toLocaleString()}</span> × <span class="h">25 ms</span> <span class="c">// 10 ms hop, used to build the spectrogram</span>\n`+
+    `per window: <span class="h">400</span> samples → <span class="h">512</span> padded → <span class="h">257</span> FFT magnitudes → <span class="h">80</span> log-mel values\n`+
+    `spectrogram: <span class="h">80 × ${win.toLocaleString()}</span> matrix of log-mel energies <span class="c">// the encoder input</span>\n`+
+    `chunks: <span class="v">${ch}</span> <span class="c">// VAD-bounded segments, one ASR call each</span>`;
+}
+
+// ============================================================ full mel spectrogram (axis-labelled, scrollable)
+function melColor(v01){ const r=Math.min(255,v01*320),g=Math.max(0,v01*255-70),b=Math.max(0,120-v01*120)+v01*60; return `rgb(${r|0},${g|0},${b|0})`; }
+function renderMelAxis(){
+  const {ctx,W,H}=fitCanvas($('melAxis'),54,240); ctx.fillStyle='#0d131d'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#8b97a8'; ctx.font='10px monospace';
+  [0,20,40,60,79].forEach(bin=>{ const y=H-16-((bin/(N_MELS-1))*(H-22)); ctx.fillText('bin '+bin,4,y+3); });
+  ctx.save(); ctx.translate(12,H/2); ctx.rotate(-Math.PI/2); ctx.fillStyle='#6c788a'; ctx.fillText('mel bin (low→high)',-40,0); ctx.restore();
+}
+function renderMelFull(){
+  renderMelAxis();
+  if(!melData||!melData.frames){ const {ctx}=fitCanvas($('melFull'),$('melFullScroll').clientWidth-2,240); ctx.fillStyle='#8b97a8'; ctx.fillText('no frames',12,20); return; }
+  const {frames,data}=melData, AX=16;
+  const cssW=Math.max($('melFullScroll').clientWidth-2, frames*melPxCol);
+  const {ctx,W,H}=fitCanvas($('melFull'),cssW,240); const specH=H-AX;
+  let mn=Infinity,mx=-Infinity; for(let i=0;i<data.length;i++){ if(data[i]<mn)mn=data[i]; if(data[i]>mx)mx=data[i]; }
+  const rng=(mx-mn)||1, cw=W/frames, ch=specH/N_MELS;
+  for(let t=0;t<frames;t++)for(let m=0;m<N_MELS;m++){ ctx.fillStyle=melColor((data[t*N_MELS+m]-mn)/rng); ctx.fillRect(t*cw,specH-(m+1)*ch,cw+0.6,ch+0.6); }
+  const durSec=lastAudio.length/SR, pps=W/durSec, step=niceTimeStep(pps);
+  ctx.fillStyle='#0d131d'; ctx.fillRect(0,specH,W,AX); ctx.fillStyle='#8b97a8'; ctx.font='10px monospace'; ctx.strokeStyle='rgba(255,255,255,0.15)';
+  for(let s=0;s<=durSec+1e-9;s+=step){ const xx=s*pps; ctx.beginPath(); ctx.moveTo(xx+0.5,specH); ctx.lineTo(xx+0.5,specH+4); ctx.stroke(); ctx.fillText(s.toFixed(step<1?2:(step<5?1:0))+'s',Math.min(xx+2,W-30),specH+13); }
+  $('melMeta').textContent=`${frames} cols × 80 bins · ${durSec.toFixed(2)} s`;
+}
+
+// ============================================================ deep dive
+function barPlot(cv,arr,color){ const {ctx,W,H}=fitCanvas(cv,cv.parentElement.clientWidth-24);
+  ctx.clearRect(0,0,W,H); let mx=1e-9; for(const v of arr)mx=Math.max(mx,Math.abs(v)); const bw=W/arr.length;
+  for(let i=0;i<arr.length;i++){ const h=Math.abs(arr[i])/mx*(H-4); ctx.fillStyle=typeof color==='function'?color(i,arr.length):color; ctx.fillRect(i*bw,H-h,Math.max(bw-0.3,0.8),h); } }
+function linePlot(cv,arr,color){ const {ctx,W,H}=fitCanvas(cv,cv.parentElement.clientWidth-24);
+  ctx.clearRect(0,0,W,H); let mx=1e-9; for(const v of arr)mx=Math.max(mx,Math.abs(v)); ctx.strokeStyle=color; ctx.lineWidth=1; ctx.beginPath();
+  for(let i=0;i<arr.length;i++){ const x=i/(arr.length-1)*W, y=H/2-(arr[i]/mx)*(H/2-3); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke(); }
+function vecTable(arr,note,perRow){ perRow=perRow||8; let mx=0; for(const v of arr)mx=Math.max(mx,Math.abs(v)); let h=note?`<div class="vecnote">${escapeHtml(note)}</div>`:'';
+  for(let i=0;i<arr.length;i+=perRow){ h+=`<div class="vecrow"><span class="vidx">${i}:</span>`;
+    for(let j=i;j<Math.min(i+perRow,arr.length);j++){ const v=arr[j],hot=mx>0&&Math.abs(v)>=0.6*mx; h+=`<span class="vval${hot?' hot':''}">${fmtNum(v)}</span>`; } h+='</div>'; } return h; }
+
+function renderDeepDive(){
+  if(!lastAudio||selectedWindow<0){ $('ddMeta').textContent='click the waveform'; return; }
+  const off=selectedWindow*HOP, t0=off/SR, t1=(off+WIN)/SR;
+  $('ddMeta').textContent=`window ${selectedWindow+1} of ${melData.frames} · ${t0.toFixed(3)}–${t1.toFixed(3)} s`;
+  const slice=new Float32Array(WIN); for(let i=0;i<WIN;i++)slice[i]=lastAudio[off+i]||0;
+  const mag=frameMagnitudes(lastAudio,off);
+  const lm=logMelFrame(mag);
+  linePlot($('dvSlice'),slice,'#1f9e8a');
+  barPlot($('dvFFT'),mag,(i,n)=>`hsl(${280-(i/n)*60},65%,62%)`);
+  barPlot($('dvMel'),lm.map(v=>v-Math.min(...lm)),(i,n)=>`hsl(${50-(i/n)*40},85%,${45+ (1-i/n)*15}%)`);
+  $('rawSlice').innerHTML=vecTable(Array.from(slice),'Float32Array length 400 — raw samples in this 25 ms window.');
+  $('rawFFT').innerHTML=vecTable(Array.from(mag),'Float32Array length 257 — |FFT| per bin. Bin k ↔ k×16000/512 = 31.25 Hz/bin.');
+  $('rawMel').innerHTML=vecTable(Array.from(lm),'Float32Array length 80 — log-mel energies (one spectrogram column).');
+  renderDvFull();
+  renderAnatomy(slice,mag);
+}
+function renderDvFull(){
+  const {ctx,W,H}=fitCanvas($('dvFull'),$('dvFull').parentElement.clientWidth-24,220);
+  ctx.clearRect(0,0,W,H); if(!melData)return; const {frames,data}=melData;
+  let mn=Infinity,mx=-Infinity; for(let i=0;i<data.length;i++){ if(data[i]<mn)mn=data[i]; if(data[i]>mx)mx=data[i]; } const rng=(mx-mn)||1;
+  const cw=W/frames, ch=H/N_MELS;
+  for(let t=0;t<frames;t++)for(let m=0;m<N_MELS;m++){ ctx.fillStyle=melColor((data[t*N_MELS+m]-mn)/rng); ctx.fillRect(t*cw,H-(m+1)*ch,cw+0.8,ch+0.8); }
+  if(selectedWindow>=0){ ctx.strokeStyle='#ffb454'; ctx.lineWidth=2; const xx=selectedWindow*cw+cw/2; ctx.beginPath(); ctx.moveTo(xx,0); ctx.lineTo(xx,H); ctx.stroke(); }
+}
+
+// ============================================================ anatomy
+function renderAnatomy(slice,mag){
+  // step 1: signal×hann + hann envelope
+  { const {ctx,W,H}=fitCanvas($('anStep1'),$('anStep1').parentElement.clientWidth-24,150); ctx.clearRect(0,0,W,H);
+    let mx=1e-9; for(let i=0;i<WIN;i++)mx=Math.max(mx,Math.abs(slice[i]*hann[i])); for(let i=0;i<WIN;i++)mx=Math.max(mx,Math.abs(slice[i]));
+    ctx.strokeStyle='rgba(61,220,132,0.7)'; ctx.setLineDash([4,3]); ctx.beginPath();
+    for(let i=0;i<WIN;i++){ const x=i/(WIN-1)*W, y=H/2-(hann[i]*mx)/mx*(H/2-3); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+    for(let i=WIN-1;i>=0;i--){ const x=i/(WIN-1)*W, y=H/2+(hann[i]*mx)/mx*(H/2-3); ctx.lineTo(x,y); } ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle='#b58cff'; ctx.lineWidth=1; ctx.beginPath();
+    for(let i=0;i<WIN;i++){ const x=i/(WIN-1)*W, y=H/2-(slice[i]*hann[i])/mx*(H/2-3); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke();
+    ctx.fillStyle='#b58cff'; ctx.font='10px monospace'; ctx.fillText('signal × Hann',6,12); ctx.fillStyle='rgba(61,220,132,0.9)'; ctx.fillText('Hann envelope',6,24);
+    $('rawWin').innerHTML=vecTable(Array.from(windowedSlice(lastAudio,selectedWindow*HOP)),'Float32Array length 400 — slice after Hann windowing.'); }
+  // step 2: padded 512
+  { const pad=paddedFFTInput(lastAudio,selectedWindow*HOP); const {ctx,W,H}=fitCanvas($('anStep2'),$('anStep2').parentElement.clientWidth-24,150); ctx.clearRect(0,0,W,H);
+    let mx=1e-9; for(const v of pad)mx=Math.max(mx,Math.abs(v)); ctx.strokeStyle='#b58cff'; ctx.lineWidth=1; ctx.beginPath();
+    for(let i=0;i<FFT_N;i++){ const x=i/(FFT_N-1)*W, y=H/2-(pad[i]/mx)*(H/2-3); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke();
+    const xb=WIN/(FFT_N-1)*W; ctx.strokeStyle='var(--red)'; ctx.strokeStyle='#ff5c6c'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(xb,0); ctx.lineTo(xb,H); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#ff6b9d'; ctx.font='10px monospace'; ctx.fillText('← 400 signal',6,12); ctx.fillText('zeros →',xb+6,12);
+    $('rawPad').innerHTML=vecTable(Array.from(pad),'Float32Array length 512 — first 400 are the windowed signal, 400–511 are zeros.'); }
+  // step 3: mel filterbank, highlight the filter peaking nearest the loudest mel bin
+  { const lm=logMelFrame(mag); let hi=0,hv=-Infinity; for(let m=0;m<N_MELS;m++)if(lm[m]>hv){hv=lm[m];hi=m;}
+    const {ctx,W,H}=fitCanvas($('anStep3'),$('anStep3').parentElement.clientWidth-24,150); ctx.clearRect(0,0,W,H);
+    for(let m=0;m<N_MELS;m++){ ctx.strokeStyle=m===hi?'#b58cff':'rgba(10,154,141,0.35)'; ctx.lineWidth=m===hi?2:1; ctx.beginPath();
+      const row=melFB[m]; for(let k=0;k<BINS;k++){ const x=k/(BINS-1)*W, y=H-row[k]*(H-4); k?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); }
+    ctx.fillStyle='#b58cff'; ctx.font='10px monospace'; ctx.fillText('filter #'+(hi+1)+' highlighted',6,12);
+    ctx.fillStyle='#8b97a8'; ['0k','2k','4k','6k'].forEach((lab,i)=>ctx.fillText(lab,(i*2000/8000)*W+2,H-3));
+    $('rawFilt').innerHTML=vecTable(Array.from(melFB[hi]),`Mel filter #${hi+1} of 80 — triangular weights over the 257 FFT bins; multiply by FFT power, then sum.`); }
+}
+
+// ============================================================ audio acquisition
+async function startRecording(){
+  try{ mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}}); }
+  catch(e){ status('⚠ Microphone blocked: '+e.message+'  (serve over http://localhost, not file://)'); return; }
+  if(!audioCtx || audioCtx.state==='closed') audioCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:SR});
+  try{ await audioCtx.resume(); }catch(_){}
+  sourceNode=audioCtx.createMediaStreamSource(mediaStream); processor=audioCtx.createScriptProcessor(4096,1,1); captureBuf=[];
+  processor.onaudioprocess=e=>{ captureBuf.push(new Float32Array(e.inputBuffer.getChannelData(0))); drawLive(); };
+  sourceNode.connect(processor); processor.connect(audioCtx.destination);
+  captureStart=performance.now(); recording=true; recBtn.classList.add('recording'); recBtn.textContent='■ Stop recording'; status('Recording… speak now.');
+}
+function drawLive(){ const last=captureBuf[captureBuf.length-1]; if(!last)return; const {ctx,W,H}=fitCanvas($('wave'),$('waveScroll').clientWidth-2);
+  ctx.fillStyle='#fbfcff'; ctx.fillRect(0,0,W,H); ctx.strokeStyle='#ff5c6c'; ctx.beginPath();
+  for(let x=0;x<W;x++){ const v=last[Math.floor(x/W*last.length)]||0; const y=(1-(v+1)/2)*H; x?ctx.lineTo(x,y):ctx.moveTo(0,y); } ctx.stroke(); }
+async function stopRecording(){
+  recording=false; recBtn.classList.remove('recording'); recBtn.textContent='● Start recording'; captureMs=performance.now()-captureStart;
+  try{ processor.onaudioprocess=null; processor.disconnect(); sourceNode.disconnect(); }catch(_){}
+  if(mediaStream) mediaStream.getTracks().forEach(t=>t.stop());
+  // keep audioCtx alive for the next recording — repeatedly creating/closing contexts is what hangs re-record
+  let total=0; captureBuf.forEach(c=>total+=c.length); const sig=new Float32Array(total); let o=0; for(const c of captureBuf){sig.set(c,o);o+=c.length;}
+  if(total<WIN){ status('Too short — try again.'); return; } processLoadedAudio(sig);
+}
+function resample(data,from,to){ if(from===to)return Float32Array.from(data); const ratio=to/from,n=Math.round(data.length*ratio),out=new Float32Array(n);
+  for(let i=0;i<n;i++){ const x=i/ratio,i0=Math.floor(x),fr=x-i0,a=data[i0]||0,b=data[i0+1]||a; out[i]=a+(b-a)*fr; } return out; }
+async function loadAudioFile(file){ status('Decoding '+file.name+'…');
+  try{ const arr=await file.arrayBuffer(); const tmp=new (window.AudioContext||window.webkitAudioContext)(); const buf=await tmp.decodeAudioData(arr); await tmp.close();
+    let mono; if(buf.numberOfChannels>1){ mono=new Float32Array(buf.length); for(let c=0;c<buf.numberOfChannels;c++){const d=buf.getChannelData(c);for(let i=0;i<buf.length;i++)mono[i]+=d[i]/buf.numberOfChannels;} } else mono=buf.getChannelData(0);
+    captureMs=0; processLoadedAudio(resample(mono,buf.sampleRate,SR)); }
+  catch(e){ status('⚠ Could not decode audio: '+e.message); }
+}
+function processLoadedAudio(sig){
+  rawSig=sig; lastAudio=sig; selectedWindow=-1; selectedChunk=-1; status('Analyzing…');
+  const t0=performance.now(); const vad=runVAD(sig); segments=vad.segs; frameInfo=vad.frames;
+  const nF=Math.max(0,Math.floor((sig.length-WIN)/HOP)+1), data=new Float32Array(nF*N_MELS);
+  for(let f=0;f<nF;f++) data.set(logMelFrame(frameMagnitudes(sig,f*HOP)),f*N_MELS);
+  melData={frames:nF,data}; analysisMs=performance.now()-t0;
+  selectedWindow=pickLoudestWindow(sig,nF);
+  $('statSec').textContent=(sig.length/SR).toFixed(2); $('statFrames').textContent=frameInfo.n.toLocaleString();
+  $('statWindows').textContent=nF.toLocaleString(); $('statChunks').textContent=segments.length;
+  $('tCap').textContent=captureMs?captureMs.toFixed(0):'—'; $('tAna').textContent=analysisMs.toFixed(0);
+  resultsMap={};
+  renderWaveform(); renderShapes(); renderMelFull(); renderDeepDive(); renderChunks(); buildPlayer();
+  renderTable(); refreshTranscriptViews(); populateInspectorModels(); renderChunkInspector();
+  status(`Ready — ${(sig.length/SR).toFixed(2)} s, ${segments.length} chunk(s), ${nF} windows. Select models and click compare.`);
+}
+function pickLoudestWindow(sig,nF){ let best=0,bestE=-1; for(let f=0;f<nF;f++){ let e=0; for(let i=0;i<WIN;i++){ const s=sig[f*HOP+i]||0; e+=s*s; } if(e>bestE){bestE=e;best=f;} } return best; }
+
+// ============================================================ encode + ASR
+function encodeWAV(sig){ const buf=new ArrayBuffer(44+sig.length*2),view=new DataView(buf);
+  const wr=(o,s)=>{for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));};
+  wr(0,'RIFF');view.setUint32(4,36+sig.length*2,true);wr(8,'WAVE');wr(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+  view.setUint32(24,SR,true);view.setUint32(28,SR*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);wr(36,'data');view.setUint32(40,sig.length*2,true);
+  let o=44; for(let i=0;i<sig.length;i++){ const s=Math.max(-1,Math.min(1,sig[i])); view.setInt16(o,s<0?s*0x8000:s*0x7fff,true); o+=2; } return new Blob([buf],{type:'audio/wav'}); }
+function blobToBase64(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(blob); }); }
+async function apiErr(res){ let m=res.status+' '+res.statusText; try{ const j=await res.json(); m=j.error?.message||j.error?.[0]?.message||(typeof j.error==='string'?j.error:null)||j.message||m; }catch(_){} return m; }
+// Transcribe ANY audio (full clip or a single chunk slice) with one model.
+async function transcribeAudio(id, audio){ const p=providerOf(id);
+  if(p==='local'){ if(!window.localASR) await waitFor(()=>window.localASR,12000);
+    if(!window.localASR) throw new Error('local runtime not loaded (network / browser support)');
+    return await window.localASR(id, audio, status); }
+  if(p==='anthropic') throw new Error('Anthropic has no audio/ASR endpoint.');
+  throw new Error('Unsupported provider: '+p); }
+
+// ============================================================ WER
+function tokenize(s){ return (s||'').toLowerCase().replace(/[^\p{L}\p{N}\s']/gu,' ').split(/\s+/).filter(Boolean); }
+function werAlign(refStr,hypStr){ const ref=tokenize(refStr),hyp=tokenize(hypStr),n=ref.length,m=hyp.length;
+  const d=Array.from({length:n+1},()=>new Int32Array(m+1)), bp=Array.from({length:n+1},()=>new Array(m+1).fill(''));
+  for(let i=0;i<=n;i++){d[i][0]=i;bp[i][0]='D';} for(let j=0;j<=m;j++){d[0][j]=j;bp[0][j]='I';} bp[0][0]='';
+  for(let i=1;i<=n;i++)for(let j=1;j<=m;j++){ const c=ref[i-1]===hyp[j-1]?0:1; let best=d[i-1][j-1]+c,op=c?'S':'H';
+    if(d[i-1][j]+1<best){best=d[i-1][j]+1;op='D';} if(d[i][j-1]+1<best){best=d[i][j-1]+1;op='I';} d[i][j]=best;bp[i][j]=op; }
+  let i=n,j=m; const ops=[]; while(i>0||j>0){ const op=bp[i][j];
+    if(op==='H'||op==='S'){ops.push({op,ref:ref[i-1],hyp:hyp[j-1]});i--;j--;} else if(op==='D'){ops.push({op:'D',ref:ref[i-1],hyp:null});i--;} else {ops.push({op:'I',ref:null,hyp:hyp[j-1]});j--;} }
+  ops.reverse(); let S=0,I=0,D=0,H=0; for(const o of ops){ if(o.op==='S')S++; else if(o.op==='I')I++; else if(o.op==='D')D++; else H++; }
+  return {ops,S,I,D,H,N:n,wer:n?(S+I+D)/n:(m?1:0)}; }
+
+// ============================================================ cost
+function estimateCost(id,durSec,text){ const r=RATES[id]; if(!r)return {cost:0,note:providerOf(id)==='local'?'runs in browser · free':'free / unpriced'};
+  if(r.perMin!=null)return {cost:r.perMin*(durSec/60),note:`${(durSec/60).toFixed(2)} min × $${r.perMin}/min`};
+  const audioTok=Math.round(durSec*32), outTok=Math.round(tokenize(text).length/0.75);
+  return {cost:audioTok/1e6*r.audioPerMTok+outTok/1e6*r.outPerMTok, note:`${audioTok} audio + ${outTok} out tok`}; }
+
+// ============================================================ comparison
+async function runComparison(){
+  if(!lastAudio){ status('Record or upload audio first.'); return; }
+  const checked=[...document.querySelectorAll('.modelchk:checked')].map(c=>c.value);
+  if(!checked.length){ status('Select at least one model to compare.'); return; }
+  const gt=$('groundTruth').value.trim(), durSec=lastAudio.length/SR, segs=chunkSegs();
+  resultsMap={}; selectedRow=null; $('detail').classList.remove('show');
+  for(const id of checked) resultsMap[id]={id,durSec,state:'queued',hasGT:!!gt,chunkTexts:new Array(segs.length).fill(null)};
+  renderTable(); populateInspectorModels(); $('compareBtn').disabled=true;
+  for(const id of checked){ resultsMap[id].state='running'; renderTable(); const t0=performance.now();
+    try{ const texts=[];
+      for(let ci=0;ci<segs.length;ci++){ const sg=segs[ci]; status(`${id} · chunk ${ci+1}/${segs.length}…`);
+        const t=await transcribeAudio(id, lastAudio.subarray(sg.start,sg.end));
+        texts.push(t); resultsMap[id].chunkTexts[ci]=t;
+        if($('chunkModel').value===id) renderChunkInspector(); }
+      resultsMap[id].latency=performance.now()-t0;
+      resultsMap[id].text=texts.join(' ').replace(/\s+/g,' ').trim();
+      resultsMap[id].costObj=estimateCost(id,durSec,resultsMap[id].text);
+      if(gt) resultsMap[id].wer=werAlign(gt,resultsMap[id].text); resultsMap[id].state='done'; }
+    catch(e){ resultsMap[id].latency=performance.now()-t0; resultsMap[id].error=e.message; resultsMap[id].state='error'; }
+    renderTable(); populateInspectorModels(); if($('chunkModel').value===id) renderChunkInspector(); }
+  $('compareBtn').disabled=false; refreshTranscriptViews(); populateInspectorModels(); renderChunkInspector();
+  status('Comparison complete — '+checked.length+' model(s), '+segs.length+' chunk(s) each.'+(gt?'':' (Add ground truth to score WER.)'));
+}
+function werClass(w){ return w<0.1?'wgood':(w<0.3?'wmid':'wbad'); }
+function sortVal(r){ if(sortKey==='latency')return r.latency??Infinity; if(sortKey==='cost')return r.costObj?r.costObj.cost:Infinity; if(sortKey==='wer')return r.wer?r.wer.wer:Infinity; return 0; }
+function sortedResults(){ return Object.values(resultsMap).sort((a,b)=>sortVal(a)-sortVal(b)); }
+function renderTable(){ const body=$('resultsBody'), arr=sortedResults();
+  if(!arr.length){ body.innerHTML='<tr><td colspan="8" style="color:var(--muted)">— run a comparison to populate —</td></tr>'; return; }
+  body.innerHTML='';
+  for(const r of arr){ const tr=document.createElement('tr'); tr.className='resrow'+(selectedRow===r.id?' sel':''); tr.dataset.id=r.id;
+    let st; if(r.state==='queued')st='<span style="color:var(--muted)">queued</span>'; else if(r.state==='running')st='<span class="spin">⟳ running…</span>';
+    else if(r.state==='error')st='<span class="err">✕ '+escapeHtml(r.error)+'</span>'; else st='<span style="color:var(--green)">✓ done</span>';
+    const lat=r.latency!=null?Math.round(r.latency)+' ms':'—';
+    const fp=providerOf(r.id); const cost=r.costObj?(r.costObj.cost<0.01?'$'+r.costObj.cost.toFixed(5):'$'+r.costObj.cost.toFixed(4)):(fp==='local'?'free':'—');
+    let wer='—',S='—',I='—',D='—'; if(r.wer){ wer=`<span class="${werClass(r.wer.wer)}">${(r.wer.wer*100).toFixed(1)}%</span>`; S=r.wer.S;I=r.wer.I;D=r.wer.D; }
+    else if(r.state==='done'&&!r.hasGT) wer='<span style="color:var(--muted)">no ref</span>';
+    tr.innerHTML=`<td>${escapeHtml(r.id)}<br><small style="color:var(--muted)">${escapeHtml(sizeOf(r.id))}</small></td>`+
+      `<td class="num">${lat}</td><td class="num" title="${r.costObj?escapeHtml(r.costObj.note):''}">${cost}</td>`+
+      `<td class="num">${wer}</td><td class="num">${S}</td><td class="num">${I}</td><td class="num">${D}</td><td>${st}</td>`;
+    tr.addEventListener('click',()=>showDetail(r.id)); body.appendChild(tr); }
+}
+function showDetail(id){ selectedRow=id; renderTable(); const r=resultsMap[id],det=$('detail');
+  if(!r||(r.state!=='done'&&r.state!=='error')){ det.classList.remove('show'); return; }
+  let html=`<div class="kv"><b>${escapeHtml(id)}</b> · ${escapeHtml(PROVIDERS[providerOf(id)].label)} · ${escapeHtml(sizeOf(id))}</div>`;
+  if(r.error){ det.innerHTML=html+`<div class="err">Error: ${escapeHtml(r.error)}</div>`; det.classList.add('show'); return; }
+  html+=`<div class="kv">latency <b>${Math.round(r.latency)} ms</b>`+(r.costObj?` · est cost <b>${r.costObj.cost<0.01?'$'+r.costObj.cost.toFixed(5):'$'+r.costObj.cost.toFixed(4)}</b> <span style="color:var(--muted)">(${escapeHtml(r.costObj.note)})</span>`:'')+`</div>`;
+  if(r.wer){ const w=r.wer; html+=`<div class="kv">WER <b class="${werClass(w.wer)}">${(w.wer*100).toFixed(1)}%</b> · ref words <b>${w.N}</b> · correct <b>${w.H}</b> · subs <b>${w.S}</b> · ins <b>${w.I}</b> · del <b>${w.D}</b></div>`;
+    html+=`<div class="kv" style="margin-top:8px;">Alignment (hypothesis; errors marked):</div><div class="align">`+w.ops.map(o=>{
+      if(o.op==='H')return `<span class="al-h">${escapeHtml(o.hyp)}</span>`; if(o.op==='S')return `<span class="al-s" title="reference: ${escapeHtml(o.ref)}">${escapeHtml(o.hyp)}</span>`;
+      if(o.op==='I')return `<span class="al-i" title="insertion">${escapeHtml(o.hyp)}</span>`; return `<span class="al-d" title="deleted reference word">${escapeHtml(o.ref)}</span>`; }).join(' ')+`</div>`;
+  } else html+=`<div class="kv" style="color:var(--muted)">No ground truth — WER not computed.</div>`;
+  html+=`<div class="kv" style="margin-top:10px;">Transcript:</div><div class="align" style="line-height:1.7;">${escapeHtml(r.text||'(empty)')}</div>`;
+  det.innerHTML=html; det.classList.add('show'); }
+document.querySelectorAll('#resultsTable th[data-sort]').forEach(th=>th.addEventListener('click',()=>{sortKey=th.dataset.sort;renderTable();}));
+
+// ============================================================ tokens + transcript views
+function approxTokens(text){ const out=[]; const parts=text.match(/\s+|[A-Za-z]+|\d+|[^\sA-Za-z\d]+/g)||[];
+  for(const p of parts){ if(/^\s+$/.test(p))continue;
+    if(/^[A-Za-z]+$/.test(p)){ let w=p; while(w.length>6){ const k=4+(w.length%2); out.push({t:w.slice(0,k),cls:'text'}); w=w.slice(k);} out.push({t:w,cls:'text'}); }
+    else if(/^\d+$/.test(p)) out.push({t:p,cls:'num'}); else for(const ch of p) out.push({t:ch,cls:'punct'}); }
+  return out; }
+function renderTokens(text){ const host=$('tokens');
+  if(!text){ host.innerHTML='<span style="color:var(--muted)">— transcribe to populate —</span>'; return; }
+  let id=1000; const chips=[];
+  [['startoftranscript',50258],['en',50259],['transcribe',50359],['notimestamps',50363]].forEach(s=>chips.push(`<span class="tok special">◁ ${s[0]} ▷<small>${s[1]}</small></span>`));
+  for(const tk of approxTokens(text)) chips.push(`<span class="tok ${tk.cls}">${escapeHtml(tk.t)}<small>${id++}</small></span>`);
+  chips.push(`<span class="tok special">◁ endoftext ▷<small>50257</small></span>`);
+  host.innerHTML=chips.join(''); }
+function renderChunks(){ const host=$('chunkList'); if(!segments.length){ host.innerHTML='<div style="color:var(--muted);font-size:12px;padding:6px 0;">no speech chunks detected</div>'; return; }
+  host.innerHTML=''; segments.forEach((sg,i)=>{ const a=(sg.start/SR).toFixed(2),b=(sg.end/SR).toFixed(2); const div=document.createElement('div');
+    div.className='chunk'+(selectedChunk===i?' sel':''); div.innerHTML=`<div class="meta">chunk ${i+1} · ${a}s – ${b}s · ${((sg.end-sg.start)/SR).toFixed(2)}s</div>`;
+    div.addEventListener('click',()=>{ selectedChunk=(selectedChunk===i?-1:i); renderChunks(); renderWaveform(); }); host.appendChild(div); }); }
+// ---- per-chunk listen + transcribe inspector ----
+function buildPlayer(){ if(playerURL)URL.revokeObjectURL(playerURL); playerURL=URL.createObjectURL(encodeWAV(lastAudio)); $('player').src=playerURL; }
+function drawMiniWave(cv,samples){ const {ctx,W,H}=fitCanvas(cv,200,54); ctx.fillStyle='#fbfcff'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#36406e'; ctx.beginPath(); const spp=Math.max(1,samples.length/W);
+  for(let x=0;x<W;x++){ let mn=1,mx=-1; const a=Math.floor(x*spp),b=Math.floor((x+1)*spp);
+    for(let i=a;i<b&&i<samples.length;i++){ const v=samples[i]; if(v<mn)mn=v; if(v>mx)mx=v; } if(mn>mx){mn=0;mx=0;}
+    ctx.moveTo(x+0.5,(1-(mx+1)/2)*H); ctx.lineTo(x+0.5,(1-(mn+1)/2)*H); } ctx.stroke();
+  ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke(); }
+function chunkSegs(){ return segments.length?segments:(lastAudio?[{start:0,end:lastAudio.length}]:[]); }
+function renderChunkInspector(){ const host=$('chunkInspector'); const segs=chunkSegs();
+  if(!lastAudio||!segs.length){ host.innerHTML='<span style="color:var(--muted);font-size:12px;">— record or upload audio —</span>'; return; }
+  const modelId=$('chunkModel').value, r=modelId?resultsMap[modelId]:null, texts=(r&&r.chunkTexts)?r.chunkTexts:[];
+  host.innerHTML='';
+  segs.forEach((sg,i)=>{ const a=(sg.start/SR).toFixed(2),b=(sg.end/SR).toFixed(2),d=((sg.end-sg.start)/SR).toFixed(2);
+    const txt=texts[i]; const has=txt!=null&&!String(txt).startsWith('⚠');
+    const tval=txt!=null?(txt||'(no speech recognized)'):(modelId?'— transcribing… —':'— run “Transcribe &amp; compare”, then pick a model above —');
+    const row=document.createElement('div'); row.className='cinsp';
+    row.innerHTML=`<button class="cplay" title="play chunk">▶</button><canvas class="cwave"></canvas>`+
+      `<div class="cbody"><div class="cmeta">chunk ${i+1} · ${a}s – ${b}s · ${d}s</div><div class="${has?'ctext':'ctext empty'}">${escapeHtml(tval)}</div></div>`;
+    host.appendChild(row);
+    drawMiniWave(row.querySelector('canvas'), lastAudio.subarray(sg.start,sg.end));
+    row.querySelector('.cplay').addEventListener('click',()=>playChunk(i,row.querySelector('.cplay'))); }); }
+function playChunk(i,btn){ const sg=chunkSegs()[i]; if(!sg)return; const url=URL.createObjectURL(encodeWAV(lastAudio.subarray(sg.start,sg.end))); const a=new Audio(url);
+  if(playingBtn)playingBtn.classList.remove('playing'); playingBtn=btn; btn.classList.add('playing');
+  a.onended=()=>{ URL.revokeObjectURL(url); btn.classList.remove('playing'); if(playingBtn===btn)playingBtn=null; }; a.play(); }
+// dropdown lists exactly the models from the last comparison; selecting one shows its STORED per-chunk text (no re-call)
+function populateInspectorModels(){ const sel=$('chunkModel'); const done=Object.values(resultsMap).filter(r=>r.chunkTexts&&(r.state==='done'||r.state==='running')); const prev=sel.value;
+  sel.innerHTML=done.length?done.map(r=>`<option value="${escapeHtml(r.id)}">${escapeHtml(r.id)}</option>`).join(''):'<option value="">— run compare to populate —</option>';
+  if(done.some(r=>r.id===prev)) sel.value=prev; }
+
+function doneModels(){ return Object.values(resultsMap).filter(r=>r.state==='done'&&r.text!=null); }
+function refreshTranscriptViews(){
+  const done=doneModels(); const tokSel=$('tokModel'), trSel=$('trModel');
+  const opts=done.map(r=>`<option value="${escapeHtml(r.id)}">${escapeHtml(r.id)}</option>`).join('');
+  [tokSel,trSel].forEach(sel=>{ const prev=sel.value; sel.innerHTML=opts||'<option>—</option>'; if(done.some(r=>r.id===prev))sel.value=prev; });
+  paintTranscript(); paintTokens();
+  // timing cards from selected transcript model
+  const r=done.find(x=>x.id===trSel.value)||done[0];
+  $('tAsr').textContent=r&&r.latency!=null?Math.round(r.latency):'—';
+  $('tTot').textContent=r&&r.latency!=null?Math.round((captureMs||0)+(analysisMs||0)+r.latency):'—';
+}
+function paintTranscript(){ const r=doneModels().find(x=>x.id===$('trModel').value); $('transcript').innerHTML=r?escapeHtml(r.text||'(empty)'):'<span style="color:var(--muted)">— transcribe to populate —</span>'; }
+function paintTokens(){ const r=doneModels().find(x=>x.id===$('tokModel').value); renderTokens(r?r.text:''); }
+$('tokModel').addEventListener('change',paintTokens);
+$('trModel').addEventListener('change',()=>{ paintTranscript(); const r=doneModels().find(x=>x.id===$('trModel').value);
+  $('tAsr').textContent=r&&r.latency!=null?Math.round(r.latency):'—'; $('tTot').textContent=r&&r.latency!=null?Math.round((captureMs||0)+(analysisMs||0)+r.latency):'—'; });
+
+// ============================================================ events
+recBtn.addEventListener('click',()=>recording?stopRecording():startRecording());
+$('fileInput').addEventListener('change',e=>{const f=e.target.files[0]; if(f)loadAudioFile(f);});
+$('compareBtn').addEventListener('click',runComparison);
+$('chunkModel').addEventListener('change',renderChunkInspector);
+populateInspectorModels();
+document.querySelectorAll('.rawtoggle').forEach(b=>b.addEventListener('click',()=>{ const el=$(b.dataset.t); el.classList.toggle('show'); b.textContent=b.textContent.replace(/[▾▴]/,el.classList.contains('show')?'▴':'▾'); }));
+$('wave').addEventListener('click',e=>{ if(!lastAudio)return; const rect=$('wave').getBoundingClientRect(); const frac=(e.clientX-rect.left)/rect.width; const sample=frac*lastAudio.length;
+  selectedWindow=Math.max(0,Math.min(Math.floor(sample/HOP),melData.frames-1)); renderWaveform(); renderDeepDive(); });
+window.addEventListener('resize',()=>{ if(lastAudio){ renderWaveform(); renderMelFull(); renderDeepDive(); } });
+
+fitCanvas($('wave'),$('waveScroll').clientWidth-2); renderMelAxis();
+</script>
+
+<!-- Local in-browser ASR via transformers.js — fully air-gapped: library + WASM + weights all vendored, no CDN. -->
+<script type="module">
+  import { pipeline, env } from './vendor/transformers/transformers.bundle.mjs';   // self-contained vendored library (no CDN)
+  env.allowLocalModels   = true;          // model weights bundled in ./web-models/
+  env.localModelPath     = 'web-models/';
+  env.allowRemoteModels  = false;         // never hit the network
+  // absolute URL — ORT loads its WASM glue via dynamic import(), which rejects bare relative paths
+  env.backends.onnx.wasm.wasmPaths = new URL('vendor/transformers/', location.href).href;
+  env.backends.onnx.wasm.numThreads = 1;  // single-thread: no proxy worker, works without COOP/COEP headers
+  env.useBrowserCache = false;
+  const cache = {};
+  window.localASR = async (modelId, audioFloat32, onStatus) => {
+    if (!cache[modelId]) {
+      if (onStatus) onStatus('loading ' + modelId + ' from bundled weights…');
+      cache[modelId] = await pipeline('automatic-speech-recognition', modelId, { dtype: 'q8' });
+    }
+    if (onStatus) onStatus('running ' + modelId + ' locally…');
+    let out;
+    try { out = await cache[modelId](audioFloat32, { chunk_length_s: 30, stride_length_s: 5 }); }
+    catch (e) { out = await cache[modelId](audioFloat32); }   // wav2vec2 / moonshine ignore chunk args
+    return (Array.isArray(out) ? out.map(o => o.text).join(' ') : (out.text || '')).trim();
+  };
+  window.localASRReady = true;
+</script>
+</body>
+</html>
