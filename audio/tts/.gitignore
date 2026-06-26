@@ -1,0 +1,7 @@
+.venv/
+asr/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+tts_output.wav

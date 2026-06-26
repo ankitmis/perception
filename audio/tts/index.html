@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TTS Pipeline Visualizer — local & offline (Kokoro-82M)</title>
+<style>
+  :root{
+    --bg:#f3f4f9; --panel:#fff; --panel2:#f6f7fb; --panel3:#f4f5fb; --border:#e7e9f2;
+    --text:#2a2f3c; --muted:#8b93a6; --accent:#4f6ef2; --amber:#c0820f; --cyan:#0a9a8d;
+    --pink:#db3f86; --green:#15a34a; --red:#e0484d; --purple:#8b5cf6;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(30,40,80,.04),0 6px 22px rgba(30,40,80,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5}
+  header{padding:22px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#fff,#f3f4f9)}
+  header h1{margin:0;font-size:19px;font-weight:700;letter-spacing:-.2px}
+  header p{margin:5px 0 0;color:var(--muted);font-size:12.5px;max-width:1000px}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 22px 90px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .panel h2{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.1px;color:var(--muted);font-weight:700}
+  .panel h2 .step{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:6px;background:var(--accent);color:#fff;font-size:11px;margin-right:8px;vertical-align:middle}
+  .deepnote{color:var(--muted);font-size:12px;float:right;font-weight:500;text-transform:none;letter-spacing:0;font-family:var(--mono)}
+  textarea,select,input{width:100%;background:#fff;border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:8px;font-family:inherit;font-size:13px}
+  textarea{resize:vertical;min-height:64px}
+  label{display:block;color:var(--muted);margin-bottom:5px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+  .row{display:grid;grid-template-columns:1fr 240px 150px;gap:14px;align-items:end;margin-top:12px}
+  @media(max-width:760px){.row{grid-template-columns:1fr}}
+  button{font-family:inherit;cursor:pointer}
+  button.primary{background:linear-gradient(135deg,#8b5cf6,#4f6ef2);color:#fff;border:none;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14px;width:100%;box-shadow:0 6px 18px rgba(79,110,242,.30);transition:filter .15s}
+  button.primary:hover{filter:brightness(1.05)}
+  button.primary:disabled{background:#c7cde0;box-shadow:none;cursor:not-allowed}
+  .status{color:var(--muted);font-size:12px;margin-top:12px;min-height:18px}
+  canvas{display:block;background:#fbfcff;border-radius:8px;border:1px solid var(--border)}
+  .norm{font-size:14px;line-height:1.8;word-break:break-word}
+  .norm .raw{color:var(--muted)}
+  .chg{background:#fdf0d7;border-radius:3px;padding:0 3px;color:#8a5a08}
+  .phon{font-family:var(--mono);font-size:15px;line-height:1.9;color:var(--cyan);word-break:break-word}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:680px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+  .stat b{display:block;font-size:20px;font-weight:700;font-family:var(--mono)}
+  .stat span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+  audio{width:100%;height:40px;margin-top:6px}
+  .hint{color:var(--muted);font-size:11.5px;margin-top:8px}
+  code{font-family:var(--mono);color:var(--amber)}
+  .chain{color:var(--muted);font-size:11.5px;margin-top:10px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;background:var(--panel2);border:1px solid var(--border);font-size:11px;color:var(--muted);font-family:var(--mono)}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1>TTS Pipeline Visualizer <span class="pill">local · offline · Kokoro-82M</span></h1>
+  <p>Type text and watch it become speech: normalization → grapheme-to-phoneme → acoustic model + vocoder → mel-spectrogram → waveform. The synthesis runs <b>entirely in your browser</b> (Kokoro-82M via transformers.js) — no API key, no cloud, no internet.</p>
+</header>
+
+<div class="wrap">
+
+  <!-- INPUT -->
+  <div class="panel">
+    <h2>Input</h2>
+    <textarea id="text">Order #42 cost $9.99 on 12/3/2025. Dr. Smith from NASA called at 5pm.</textarea>
+    <div class="row">
+      <div><label>Voice</label><select id="voice"></select></div>
+      <div><label>Speed</label><input id="speed" type="range" min="0.5" max="1.5" step="0.05" value="1" /><div class="hint" id="speedVal" style="margin-top:2px;">1.00×</div></div>
+      <div><button id="speakBtn" class="primary">🔊 Speak</button></div>
+    </div>
+    <div class="status" id="status">Type text and click Speak. First synthesis loads the bundled model (a few seconds), then it's fast.</div>
+  </div>
+
+  <!-- STAGE 1 -->
+  <div class="panel">
+    <h2><span class="step">1</span> Text normalization</h2>
+    <div class="norm" id="norm"><span class="raw">— normalized text (numbers, currency, dates, abbreviations expanded) appears here —</span></div>
+    <div class="hint">Real TTS never feeds raw text to the model — it first expands currency, dates, ordinals, and abbreviations into spoken words. Highlighted spans changed.</div>
+  </div>
+
+  <!-- STAGE 2 -->
+  <div class="panel">
+    <h2><span class="step">2</span> Grapheme → phoneme (G2P) <span class="deepnote">eSpeak-NG, in-browser</span></h2>
+    <div class="phon" id="phon">— IPA phonemes appear here —</div>
+    <div class="hint">Kokoro is driven by phonemes, not letters. These are the actual IPA phonemes (from eSpeak-NG running as WASM in your browser) that the model receives.</div>
+  </div>
+
+  <!-- STAGE 3 -->
+  <div class="panel">
+    <h2><span class="step">3</span> Acoustic model + vocoder (Kokoro-82M, local)</h2>
+    <div class="stats">
+      <div class="stat"><b id="sVoice">—</b><span>voice</span></div>
+      <div class="stat"><b id="sDur">—</b><span>duration</span></div>
+      <div class="stat"><b id="sLat">—</b><span>synth latency</span></div>
+      <div class="stat"><b id="sRtf">—</b><span>real-time factor</span></div>
+    </div>
+    <div class="chain">82M-param StyleTTS2-style model: an acoustic model predicts the speech representation and a built-in vocoder turns it into 24 kHz audio samples — both stages run on your CPU via ONNX Runtime (WASM).</div>
+  </div>
+
+  <!-- STAGE 4 -->
+  <div class="panel">
+    <h2><span class="step">4</span> Mel-spectrogram <span class="deepnote" id="melMeta"></span></h2>
+    <canvas id="mel" height="240"></canvas>
+    <div class="hint">Computed from the generated audio: STFT → 80-bin mel filterbank → log. x = time, y = mel bin (low→high), color = energy.</div>
+  </div>
+
+  <!-- STAGE 5 -->
+  <div class="panel">
+    <h2><span class="step">5</span> Waveform &amp; playback</h2>
+    <canvas id="wave" height="150"></canvas>
+    <audio id="player" controls></audio>
+  </div>
+
+  <div class="panel">
+    <div class="chain">Pipeline: <code>text</code> → normalize → <code>phonemes</code> (eSpeak-NG) → Kokoro acoustic model → vocoder → <code>24 kHz audio</code> → mel-spectrogram + waveform. Everything bundled in this folder; runs with no network.</div>
+  </div>
+
+</div>
+
+<script>
+/* ===== TTS pipeline visualizer — Kokoro in-browser ===== */
+const $ = id => document.getElementById(id);
+const statusEl=$('status'), textEl=$('text'), voiceEl=$('voice');
+const status = m => { statusEl.textContent=m; statusEl.style.color=/^(Done|Ready|Synthesi)/.test(m)?'var(--green)':''; };
+const escapeHtml = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function waitFor(cond,ms){ return new Promise(r=>{ const t0=performance.now(); const iv=setInterval(()=>{ if(cond()||performance.now()-t0>ms){clearInterval(iv);r();} },100); }); }
+
+let lastAudio=null, SR=24000, playerURL=null;
+
+// ---------- voices ----------
+const VOICE_NAMES=["af_heart","af_alloy","af_aoede","af_bella","af_jessica","af_kore","af_nicole","af_nova","af_river","af_sarah","af_sky",
+"am_adam","am_echo","am_eric","am_fenrir","am_liam","am_michael","am_onyx","am_puck","am_santa",
+"bf_alice","bf_emma","bf_isabella","bf_lily","bm_daniel","bm_fable","bm_george","bm_lewis",
+"ef_dora","em_alex","em_santa","ff_siwis","hf_alpha","hf_beta","hm_omega","hm_psi","if_sara","im_nicola",
+"jf_alpha","jf_gongitsune","jf_nezumi","jf_tebukuro","jm_kumo","pf_dora","pm_alex","pm_santa",
+"zf_xiaobei","zf_xiaoni","zf_xiaoxiao","zf_xiaoyi","zm_yunjian","zm_yunxi","zm_yunxia","zm_yunyang"];
+const LANG={a:"US English",b:"British English",e:"Spanish",f:"French",h:"Hindi",i:"Italian",j:"Japanese",p:"Brazilian PT",z:"Chinese"};
+(function(){ for(const v of VOICE_NAMES){ const lang=LANG[v[0]]||v[0], g=v[1]==='f'?'♀':'♂';
+  const o=document.createElement('option'); o.value=v; o.textContent=`${v}  ·  ${lang} ${g}`; voiceEl.appendChild(o); }
+  voiceEl.value='af_heart'; })();
+$('speed').addEventListener('input',()=>$('speedVal').textContent=(+$('speed').value).toFixed(2)+'×');
+
+// ============================================================ text normalization
+const ONES=["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
+const TENS=["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const ORD={1:"first",2:"second",3:"third",4:"fourth",5:"fifth",6:"sixth",7:"seventh",8:"eighth",9:"ninth",10:"tenth",11:"eleventh",12:"twelfth",13:"thirteenth",14:"fourteenth",15:"fifteenth",16:"sixteenth",17:"seventeenth",18:"eighteenth",19:"nineteenth",20:"twentieth",21:"twenty first",22:"twenty second",23:"twenty third",24:"twenty fourth",25:"twenty fifth",26:"twenty sixth",27:"twenty seventh",28:"twenty eighth",29:"twenty ninth",30:"thirtieth",31:"thirty first"};
+const ABBR={"dr":"Doctor","mr":"Mister","mrs":"Misses","ms":"Miss","prof":"Professor","st":"Saint","ave":"Avenue","blvd":"Boulevard","vs":"versus","etc":"et cetera","approx":"approximately"};
+function intToWords(n){ n=parseInt(n,10); if(isNaN(n))return ""; if(n<0)return "minus "+intToWords(-n); if(n<20)return ONES[n];
+  if(n<100)return TENS[Math.floor(n/10)]+(n%10?" "+ONES[n%10]:"");
+  if(n<1000)return ONES[Math.floor(n/100)]+" hundred"+(n%100?" "+intToWords(n%100):"");
+  if(n<1000000)return intToWords(Math.floor(n/1000))+" thousand"+(n%1000?" "+intToWords(n%1000):"");
+  return intToWords(Math.floor(n/1000000))+" million"+(n%1000000?" "+intToWords(n%1000000):""); }
+function yearToWords(y){ y=parseInt(y,10); if(y>=2000&&y<2010)return "two thousand"+(y%10?" "+ONES[y%10]:"");
+  if(y>=1000&&y<3000){ const hi=Math.floor(y/100), lo=y%100; return intToWords(hi)+(lo===0?" hundred":" "+(lo<10?"oh "+ONES[lo]:intToWords(lo))); }
+  return intToWords(y); }
+function normalize(t){
+  let s=t;
+  // currency $9.99 / $42
+  s=s.replace(/\$(\d+)(?:\.(\d{1,2}))?/g,(m,d,c)=>{ let out=intToWords(d)+" dollar"+(d==="1"?"":"s"); if(c){ const cents=parseInt(c.padEnd(2,"0"),10); if(cents) out+=" and "+intToWords(cents)+" cent"+(cents===1?"":"s"); } return out; });
+  // percent
+  s=s.replace(/(\d+)%/g,(m,d)=>intToWords(d)+" percent");
+  // # number
+  s=s.replace(/#(\d+)/g,(m,d)=>"number "+intToWords(d));
+  // dates M/D/YYYY
+  s=s.replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g,(m,mo,d,y)=>{ const mi=parseInt(mo,10), di=parseInt(d,10); const mon=(mi>=1&&mi<=12)?MONTHS[mi-1]:intToWords(mo); const day=ORD[di]||intToWords(di)+"th"; return `${mon} ${day} ${yearToWords(y)}`; });
+  // time 5pm / 5:30am
+  s=s.replace(/\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\b/gi,(m,h,mm,ap)=>{ let out=intToWords(h); if(mm)out+=(mm==="00"?" o'clock":" "+intToWords(mm)); return out+" "+(ap.toLowerCase()==="a"?"A-M":"P-M"); });
+  // abbreviations Dr. Mr. etc (word-boundary, optional dot)
+  s=s.replace(/\b([A-Za-z]+)\.?/g,(m,w)=>{ const k=w.toLowerCase(); if(ABBR[k] && (m.endsWith('.')||['vs','etc'].includes(k))) return ABBR[k]; return m; });
+  // standalone integers -> words (4+ digit years handled above; here general)
+  s=s.replace(/\b\d{1,7}\b/g,(m)=>intToWords(m));
+  return s.replace(/\s+/g," ").trim();
+}
+function renderNormalization(raw,norm){
+  $('norm').innerHTML = `<div class="raw" style="margin-bottom:6px;">raw: ${escapeHtml(raw)}</div><div>${escapeHtml(norm)}</div>`;
+}
+
+// ============================================================ DSP (mel + waveform) for 24 kHz
+const N_FFT=1024, HOP=256, N_MELS=80, BINS=N_FFT/2+1;
+function fft(re,im){ const n=re.length;
+  for(let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1)j^=bit; j^=bit; if(i<j){const t=re[i];re[i]=re[j];re[j]=t;const u=im[i];im[i]=im[j];im[j]=u;} }
+  for(let len=2;len<=n;len<<=1){ const a=-2*Math.PI/len,wr=Math.cos(a),wi=Math.sin(a),h=len>>1;
+    for(let i=0;i<n;i+=len){ let cr=1,ci=0; for(let k=0;k<h;k++){ const xr=re[i+k],xi=im[i+k];
+      const yr=re[i+k+h]*cr-im[i+k+h]*ci, yi=re[i+k+h]*ci+im[i+k+h]*cr;
+      re[i+k]=xr+yr; im[i+k]=xi+yi; re[i+k+h]=xr-yr; im[i+k+h]=xi-yi; const ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr; } } } }
+const hann=new Float32Array(N_FFT); for(let i=0;i<N_FFT;i++)hann[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N_FFT-1));
+const hzToMel=f=>2595*Math.log10(1+f/700), melToHz=m=>700*(10**(m/2595)-1);
+function buildMelFB(sr){ const fmax=sr/2, m0=hzToMel(0),m1=hzToMel(fmax),pts=new Float32Array(N_MELS+2);
+  for(let i=0;i<pts.length;i++)pts[i]=melToHz(m0+(m1-m0)*i/(N_MELS+1)); const fb=[];
+  for(let m=1;m<=N_MELS;m++){ const lo=pts[m-1],c=pts[m],hi=pts[m+1],row=new Float32Array(BINS);
+    for(let k=0;k<BINS;k++){ const f=k*sr/N_FFT; if(f>=lo&&f<=c)row[k]=(f-lo)/(c-lo||1); else if(f>c&&f<=hi)row[k]=(hi-f)/(hi-c||1); } fb.push(row); } return fb; }
+let MELFB=buildMelFB(24000);
+function computeMel(sig){ const nF=Math.max(1,1+Math.floor((sig.length-N_FFT)/HOP)); const out=new Float32Array(nF*N_MELS);
+  const re=new Float32Array(N_FFT),im=new Float32Array(N_FFT);
+  for(let f=0;f<nF;f++){ const off=f*HOP; im.fill(0); for(let i=0;i<N_FFT;i++)re[i]=(sig[off+i]||0)*hann[i];
+    fft(re,im); for(let m=0;m<N_MELS;m++){ let s=0; const row=MELFB[m]; for(let k=0;k<BINS;k++){ const p=re[k]*re[k]+im[k]*im[k]; s+=row[k]*p; } out[f*N_MELS+m]=Math.log(Math.max(s,1e-10)); } }
+  return {frames:nF,data:out}; }
+function fitCanvas(cv,cssW,cssH){ const dpr=window.devicePixelRatio||1; cssH=cssH||parseInt(cv.getAttribute('height'));
+  cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr); cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); return {ctx,W:cssW,H:cssH}; }
+function melColor(v){ const r=Math.min(255,v*320),g=Math.max(0,v*255-70),b=Math.max(0,120-v*120)+v*60; return `rgb(${r|0},${g|0},${b|0})`; }
+function renderMel(){ const cv=$('mel'); const {ctx,W,H}=fitCanvas(cv,cv.parentElement.clientWidth-2,240);
+  ctx.clearRect(0,0,W,H); if(!lastAudio){ ctx.fillStyle='#8b93a6'; ctx.fillText('— speak to see the mel-spectrogram —',12,22); return; }
+  const {frames,data}=computeMel(lastAudio); let mn=Infinity,mx=-Infinity; for(let i=0;i<data.length;i++){ if(data[i]<mn)mn=data[i]; if(data[i]>mx)mx=data[i]; }
+  const rng=(mx-mn)||1, AX=16, specH=H-AX, cw=W/frames, ch=specH/N_MELS;
+  for(let t=0;t<frames;t++)for(let m=0;m<N_MELS;m++){ ctx.fillStyle=melColor((data[t*N_MELS+m]-mn)/rng); ctx.fillRect(t*cw,specH-(m+1)*ch,cw+0.8,ch+0.8); }
+  const dur=lastAudio.length/SR, pps=W/dur, step=dur>6?2:(dur>2?1:0.5);
+  ctx.fillStyle='#0d131d'; ctx.fillRect(0,specH,W,AX); ctx.fillStyle='#8b93a6'; ctx.font='10px monospace'; ctx.strokeStyle='rgba(0,0,0,0.12)';
+  for(let s=0;s<=dur+1e-9;s+=step){ const x=s*pps; ctx.fillText(s.toFixed(step<1?1:0)+'s',Math.min(x+2,W-26),specH+12); }
+  $('melMeta').textContent=`${frames} frames × 80 mel · ${dur.toFixed(2)}s`; }
+function renderWaveform(){ const cv=$('wave'); const {ctx,W,H}=fitCanvas(cv,cv.parentElement.clientWidth-2,150);
+  ctx.fillStyle='#fbfcff'; ctx.fillRect(0,0,W,H); if(!lastAudio){ ctx.fillStyle='#8b93a6'; ctx.fillText('— speak to see the waveform —',12,22); return; }
+  ctx.strokeStyle='#36406e'; ctx.beginPath(); const spp=lastAudio.length/W;
+  for(let x=0;x<W;x++){ let mn=1,mx=-1; const a=Math.floor(x*spp),b=Math.floor((x+1)*spp); for(let i=a;i<b;i++){ const v=lastAudio[i]; if(v<mn)mn=v; if(v>mx)mx=v; } if(mn>mx){mn=0;mx=0;}
+    ctx.moveTo(x+.5,(1-(mx+1)/2)*H); ctx.lineTo(x+.5,(1-(mn+1)/2)*H); } ctx.stroke();
+  ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke(); }
+
+// ============================================================ WAV encode (Float32 -> blob)
+function encodeWAV(sig,sr){ const buf=new ArrayBuffer(44+sig.length*2),v=new DataView(buf);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+sig.length*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,sig.length*2,true);
+  let o=44; for(let i=0;i<sig.length;i++){ const s=Math.max(-1,Math.min(1,sig[i])); v.setInt16(o,s<0?s*0x8000:s*0x7fff,true); o+=2; } return new Blob([buf],{type:'audio/wav'}); }
+
+// ============================================================ speak
+async function speak(){
+  if(!window.kokoroReady) await waitFor(()=>window.kokoroReady||window.kokoroError,15000);
+  if(window.kokoroError){ status('⚠ TTS runtime failed to load: '+window.kokoroError+' (open the browser console)'); return; }
+  $('speakBtn').disabled=true;
+  try{
+    const tts = await window.__kokoroLoad(status);
+    const voice=voiceEl.value, raw=textEl.value;
+    const norm=normalize(raw); renderNormalization(raw,norm);
+    try{ const ph=await window.kokoroPhonemize(norm); $('phon').textContent=Array.isArray(ph)?ph.join(' '):ph; }catch(e){ $('phon').textContent='(phonemizer: '+e.message+')'; }
+    status('Synthesizing with '+voice+'…');
+    const t0=performance.now();
+    const out=await tts.generate(norm,{voice, speed:+$('speed').value});
+    const ms=performance.now()-t0;
+    lastAudio=out.audio; SR=out.sampling_rate||24000; if(MELFB.__sr!==SR){ MELFB=buildMelFB(SR); MELFB.__sr=SR; }
+    if(playerURL)URL.revokeObjectURL(playerURL); playerURL=URL.createObjectURL(encodeWAV(lastAudio,SR)); $('player').src=playerURL;
+    const dur=lastAudio.length/SR;
+    $('sVoice').textContent=voice; $('sDur').textContent=dur.toFixed(2)+'s'; $('sLat').textContent=Math.round(ms)+' ms'; $('sRtf').textContent=(ms/1000/dur).toFixed(2)+'×';
+    renderWaveform(); renderMel();
+    status('Done — '+dur.toFixed(2)+'s of audio in '+Math.round(ms)+' ms.');
+  }catch(e){ status('⚠ '+e.message); console.error(e); }
+  $('speakBtn').disabled=false;
+}
+$('speakBtn').addEventListener('click',speak);
+window.addEventListener('resize',()=>{ if(lastAudio){ renderWaveform(); renderMel(); } });
+renderWaveform(); renderMel();
+</script>
+
+<!-- Kokoro TTS in the browser — fully vendored (library + espeak + WASM), no CDN -->
+<script type="module">
+  (async () => {
+    try {
+      // The bundle is fully self-contained for offline use — model loading
+      // (allowRemoteModels=false / allowLocalModels=true / localModelPath=web-models/),
+      // the local voices URL, and the ONNX-Runtime WASM path (vendor/transformers/)
+      // are all baked into vendor/kokoro/kokoro.bundle.mjs. See README "patches for offline".
+      const { KokoroTTS, phonemize } = await import('./vendor/kokoro/kokoro.bundle.mjs');
+      window.kokoroPhonemize = phonemize;
+      window.__kokoroLoad = async (onStatus) => {
+        if (window.kokoroTTS) return window.kokoroTTS;
+        if (onStatus) onStatus('loading Kokoro-82M from bundled weights (first run only)…');
+        window.kokoroTTS = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: 'q8' });
+        return window.kokoroTTS;
+      };
+      window.kokoroReady = true;
+    } catch (e) {
+      window.kokoroError = (e && (e.message || e.toString())) || 'unknown';
+      console.error('[TTS] kokoro init failed:', e);
+    }
+  })();
+</script>
+</body>
+</html>

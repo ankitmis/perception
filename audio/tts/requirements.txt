@@ -1,0 +1,13 @@
+# Local, offline Text-to-Speech (Kokoro-82M)
+kokoro
+misaki[en]
+soundfile
+librosa
+matplotlib
+numpy
+torch
+# spaCy English model used by the G2P (pinned wheel — avoids a runtime download):
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# run the notebook:
+jupyterlab
+ipykernel
